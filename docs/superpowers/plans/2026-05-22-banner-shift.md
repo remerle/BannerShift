@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Implement BannerShift per `plan.md` — a macOS background utility that repositions native notification banners to one of nine user-chosen positions on the chosen display.
+**Goal:** Implement BannerShift per `plan.md` — a macOS background utility that repositions native notification banners to one of nine user-chosen positions, with user-defined per-notification rules (matched against banner text) and per-rule animation overrides.
 
-**Architecture:** Two-module Swift Package: `BannerShiftCore` (pure logic: position math, baseline tracking, debouncer, preferences, observer dedup, logger) is unit-tested with Swift Testing; `BannerShift` (app executable) is a thin AppKit/Accessibility-API glue layer that depends on Core. The app is a per-user `LSUIElement` agent — no Dock icon, no main window, optional status item. Build via `swift build`; bundle assembly, signing, and notarization are handled by shell scripts.
+**Architecture:** Two-module Swift Package. `BannerShiftCore` (pure logic — position math, baseline tracking, debouncer, preferences, observer dedup, logger, rules, rule matching, animation frame math) is unit-tested with Swift Testing. `BannerShift` (app executable) is a thin AppKit/Accessibility-API glue layer over Core, plus a rule-editor window. The app is a per-user `LSUIElement` agent — no Dock icon, no main window, optional status item. Build via `swift build`; bundle assembly, signing, and notarization are handled by shell scripts.
 
-**Tech Stack:** Swift 5.10+ / Swift Testing, AppKit, Accessibility API (`AXUIElement`, `AXObserver`), `NSWorkspace`, `UserNotifications`, `ServiceManagement` (SMAppService), `os.Logger`. Deployment target `macOS 13.0` (SMAppService floor); current verified target macOS 26.
+**Tech Stack:** Swift 5.10+ / Swift Testing, AppKit, Accessibility API (`AXUIElement`, `AXObserver`), `NSWorkspace`, `UserNotifications`, `ServiceManagement` (SMAppService), `os.Logger`, Swift `Regex` literal type. Deployment target `macOS 13.0` (SMAppService floor); current verified target macOS 26.
 
 **Deviations from `plan.md` (deliberate, explained inline):**
 
@@ -14,6 +14,7 @@
 2. **§20.3 invariant assertion failure mode is "log error and skip the move"**, not crash. A loud-but-recoverable mode is friendlier than a crash in a background agent.
 3. **§14 log file rotates** when it exceeds 5 MB at launch — append handle held open as the spec requires, but launch-time truncation prevents unbounded growth.
 4. **SwiftPM instead of raw swiftc** for the build root. Same net artifact; testability is the win.
+5. **Rules + animations are scoped into v1.** The spec (§22) was updated to fold in the rule engine, rule editor UI, banner text capture, and four animation styles. This is a deliberate, user-approved scope expansion beyond the v1 minimum.
 
 ---
 
@@ -26,6 +27,7 @@ BannerShift/
 │   ├── BannerShiftCore/                      # testable, no AppKit globals
 │   │   ├── Constants.swift                   # bundle ID, fragile strings, paddings
 │   │   ├── Position.swift                    # the 9-cell enum + display names
+│   │   ├── Animation.swift                   # animation style enum (§22)
 │   │   ├── Preferences.swift                 # UserDefaults-backed keys
 │   │   ├── Baseline.swift                    # baseline record value type
 │   │   ├── ScreenInfo.swift                  # injectable display value type
@@ -33,17 +35,26 @@ BannerShift/
 │   │   ├── PositionCalculator.swift          # target window origin math (§7)
 │   │   ├── Debouncer.swift                   # main-queue debounce (§10)
 │   │   ├── ObserverKey.swift                 # AX observer dedup tuple (§11)
-│   │   └── FileLogger.swift                  # rotating-on-launch file logger
+│   │   ├── FileLogger.swift                  # rotating-on-launch file logger
+│   │   ├── BannerText.swift                  # value type: app/title/subtitle/body
+│   │   ├── Rule.swift                        # rule record (Codable) (§22)
+│   │   ├── RuleStore.swift                   # JSON-in-UserDefaults rule persistence
+│   │   ├── RuleMatcher.swift                 # regex matching, first-match-wins
+│   │   └── AnimationFrames.swift             # pure frame-schedule generator (§22)
 │   └── BannerShift/                          # app executable
 │       ├── main.swift                        # NSApplication boot
 │       ├── AppDelegate.swift                 # top-level wiring
 │       ├── AccessibilityPermission.swift     # request + verify trust
 │       ├── AXBannerFinder.swift              # walk AX tree by subrole
+│       ├── BannerTextExtractor.swift         # collect text strings from banner subtree
+│       ├── AppResolver.swift                 # best-effort bundle ID via NSWorkspace
 │       ├── NotificationCenterPanelDetector.swift  # widget-editor probe
+│       ├── Animator.swift                    # drives AnimationFrames over AX writes
 │       ├── BannerMover.swift                 # orchestrator
 │       ├── AXObserverController.swift        # AXObserver lifecycle
 │       ├── NotificationUIWatcher.swift       # workspace launch/terminate
 │       ├── MenuBarController.swift           # NSStatusItem + menu
+│       ├── RuleEditorWindowController.swift  # rule list + detail pane + tester
 │       ├── LaunchAtLoginToggle.swift         # SMAppService wrapper
 │       ├── TestNotification.swift            # UNUserNotificationCenter
 │       └── AboutWindowController.swift
@@ -56,7 +67,11 @@ BannerShift/
 │       ├── PositionCalculatorTests.swift
 │       ├── DebouncerTests.swift
 │       ├── ObserverKeyTests.swift
-│       └── FileLoggerTests.swift
+│       ├── FileLoggerTests.swift
+│       ├── RuleTests.swift
+│       ├── RuleStoreTests.swift
+│       ├── RuleMatcherTests.swift
+│       └── AnimationFramesTests.swift
 ├── Resources/
 │   ├── Info.plist
 │   ├── BannerShift.entitlements
@@ -1496,6 +1511,647 @@ git commit -m "feat(core): add FileLogger
 
 ---
 
+## Task 11A: Animation enum (TDD)
+
+**Files:**
+- Create: `Sources/BannerShiftCore/Animation.swift`
+
+Per spec §22. Small foundational enum used by rules and the global default.
+
+- [ ] **Step 1: Extend `PositionTests.swift` pattern — add `AnimationTests.swift`**
+
+```swift
+// Tests/BannerShiftCoreTests/AnimationTests.swift
+import Testing
+@testable import BannerShiftCore
+
+@Test func animationFourCases() {
+    #expect(Animation.allCases.count == 4)
+}
+
+@Test func animationRawValuesStable() {
+    #expect(Animation.none.rawValue == "none")
+    #expect(Animation.slide.rawValue == "slide")
+    #expect(Animation.shake.rawValue == "shake")
+    #expect(Animation.bounce.rawValue == "bounce")
+}
+
+@Test func animationDisplayNames() {
+    #expect(Animation.none.displayName == "None")
+    #expect(Animation.slide.displayName == "Slide")
+    #expect(Animation.shake.displayName == "Shake")
+    #expect(Animation.bounce.displayName == "Bounce")
+}
+
+@Test func animationCodableRoundTrip() throws {
+    for a in Animation.allCases {
+        let data = try JSONEncoder().encode(a)
+        let decoded = try JSONDecoder().decode(Animation.self, from: data)
+        #expect(decoded == a)
+    }
+}
+```
+
+- [ ] **Step 2: Run tests, see failures**
+
+Run: `make test`
+Expected: "cannot find 'Animation' in scope".
+
+- [ ] **Step 3: Implement `Animation.swift`**
+
+```swift
+import Foundation
+
+public enum Animation: String, CaseIterable, Sendable, Codable {
+    case none   = "none"
+    case slide  = "slide"
+    case shake  = "shake"
+    case bounce = "bounce"
+
+    public var displayName: String {
+        switch self {
+        case .none:   return "None"
+        case .slide:  return "Slide"
+        case .shake:  return "Shake"
+        case .bounce: return "Bounce"
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Tests pass**
+
+Run: `make test`
+Expected: 4 Animation tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Sources/BannerShiftCore/Animation.swift Tests/BannerShiftCoreTests/AnimationTests.swift
+git commit -m "feat(core): add Animation enum
+
+Four cases (none, slide, shake, bounce) with stable raw values for
+JSON persistence and display names for menus (plan §22)."
+```
+
+---
+
+## Task 11B: BannerText, Rule, RuleStore (TDD)
+
+**Files:**
+- Create: `Sources/BannerShiftCore/BannerText.swift`
+- Create: `Sources/BannerShiftCore/Rule.swift`
+- Create: `Sources/BannerShiftCore/RuleStore.swift`
+- Create: `Tests/BannerShiftCoreTests/RuleTests.swift`
+- Create: `Tests/BannerShiftCoreTests/RuleStoreTests.swift`
+
+Per spec §22. Three tightly-coupled types added together: `BannerText` (matchable subject), `Rule` (a single rule record, Codable), `RuleStore` (JSON-in-UserDefaults persistence with corruption tolerance).
+
+- [ ] **Step 1: Write failing tests**
+
+```swift
+// Tests/BannerShiftCoreTests/RuleTests.swift
+import Testing
+import Foundation
+@testable import BannerShiftCore
+
+@Test func bannerTextEmptyDefaults() {
+    let t = BannerText()
+    #expect(t.appName == "")
+    #expect(t.title == "")
+    #expect(t.body == "")
+    #expect(t.bundleID == nil)
+}
+
+@Test func bannerTextEquatable() {
+    let a = BannerText(appName: "A", title: "T")
+    let b = BannerText(appName: "A", title: "T")
+    #expect(a == b)
+}
+
+@Test func ruleInitDefaults() {
+    let r = Rule()
+    #expect(!r.id.isEmpty)
+    #expect(r.enabled == true)
+    #expect(r.position == nil)
+    #expect(r.animation == nil)
+    #expect(r.appPattern == nil)
+}
+
+@Test func ruleCodableRoundTrip() throws {
+    let r = Rule(
+        id: "1234",
+        name: "Slack DMs",
+        enabled: true,
+        appPattern: "Slack",
+        titlePattern: "^DM",
+        position: .middle,
+        animation: .shake
+    )
+    let data = try JSONEncoder().encode(r)
+    let back = try JSONDecoder().decode(Rule.self, from: data)
+    #expect(back == r)
+}
+
+@Test func ruleCodableHandlesNilFields() throws {
+    let r = Rule(name: "Catchall")
+    let data = try JSONEncoder().encode(r)
+    let back = try JSONDecoder().decode(Rule.self, from: data)
+    #expect(back == r)
+}
+```
+
+```swift
+// Tests/BannerShiftCoreTests/RuleStoreTests.swift
+import Testing
+import Foundation
+@testable import BannerShiftCore
+
+private func makeSuite() -> UserDefaults {
+    let name = "test-\(UUID().uuidString)"
+    let suite = UserDefaults(suiteName: name)!
+    suite.removePersistentDomain(forName: name)
+    return suite
+}
+
+@Test func ruleStoreEmptyByDefault() {
+    let store = RuleStore(defaults: makeSuite())
+    #expect(store.load() == [])
+}
+
+@Test func ruleStoreSaveLoadRoundTripPreservesOrder() {
+    let suite = makeSuite()
+    let store = RuleStore(defaults: suite)
+    let rules = [
+        Rule(name: "A", appPattern: "Slack", position: .middle),
+        Rule(name: "B", appPattern: "Calendar", position: .topRight),
+    ]
+    store.save(rules)
+    let back = RuleStore(defaults: suite).load()
+    #expect(back == rules)
+    #expect(back.map(\.name) == ["A", "B"])
+}
+
+@Test func ruleStoreReturnsEmptyOnCorruptJSON() {
+    let suite = makeSuite()
+    suite.set(Data("not json".utf8), forKey: RuleStore.key)
+    var logged: [String] = []
+    let store = RuleStore(defaults: suite, logger: { logged.append($0) })
+    #expect(store.load() == [])
+    #expect(!logged.isEmpty)
+}
+```
+
+- [ ] **Step 2: Run, see failures**
+
+Run: `make test`
+Expected: "cannot find 'BannerText' / 'Rule' / 'RuleStore' in scope".
+
+- [ ] **Step 3: Implement `BannerText.swift`**
+
+```swift
+import Foundation
+
+public struct BannerText: Equatable, Sendable {
+    public let appName: String
+    public let bundleID: String?
+    public let title: String
+    public let subtitle: String
+    public let body: String
+
+    public init(
+        appName: String = "",
+        bundleID: String? = nil,
+        title: String = "",
+        subtitle: String = "",
+        body: String = ""
+    ) {
+        self.appName = appName
+        self.bundleID = bundleID
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+    }
+}
+```
+
+- [ ] **Step 4: Implement `Rule.swift`**
+
+```swift
+import Foundation
+
+public struct Rule: Equatable, Sendable, Codable, Identifiable {
+    public let id: String
+    public var name: String
+    public var enabled: Bool
+    public var appPattern: String?
+    public var bundleIDPattern: String?
+    public var titlePattern: String?
+    public var subtitlePattern: String?
+    public var bodyPattern: String?
+    public var position: Position?
+    public var animation: Animation?
+
+    public init(
+        id: String = UUID().uuidString,
+        name: String = "",
+        enabled: Bool = true,
+        appPattern: String? = nil,
+        bundleIDPattern: String? = nil,
+        titlePattern: String? = nil,
+        subtitlePattern: String? = nil,
+        bodyPattern: String? = nil,
+        position: Position? = nil,
+        animation: Animation? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.enabled = enabled
+        self.appPattern = appPattern
+        self.bundleIDPattern = bundleIDPattern
+        self.titlePattern = titlePattern
+        self.subtitlePattern = subtitlePattern
+        self.bodyPattern = bodyPattern
+        self.position = position
+        self.animation = animation
+    }
+}
+```
+
+- [ ] **Step 5: Implement `RuleStore.swift`**
+
+```swift
+import Foundation
+
+public final class RuleStore {
+    public static let key = "rules"
+
+    private let defaults: UserDefaults
+    private let logger: ((String) -> Void)?
+
+    public init(defaults: UserDefaults = .standard, logger: ((String) -> Void)? = nil) {
+        self.defaults = defaults
+        self.logger = logger
+    }
+
+    public func load() -> [Rule] {
+        guard let data = defaults.data(forKey: Self.key) else { return [] }
+        do {
+            return try JSONDecoder().decode([Rule].self, from: data)
+        } catch {
+            logger?("RuleStore: failed to decode rules (\(error)); starting empty")
+            return []
+        }
+    }
+
+    public func save(_ rules: [Rule]) {
+        do {
+            let data = try JSONEncoder().encode(rules)
+            defaults.set(data, forKey: Self.key)
+        } catch {
+            logger?("RuleStore: failed to encode rules (\(error)); not saved")
+        }
+    }
+}
+```
+
+Note: `Position` and `Animation` need to be `Codable`. `Position` is defined as `String, CaseIterable, Sendable` in Task 3 — extend it to `Codable` (free for String-backed enums). Add `Codable` to `Position` in this task as part of implementation.
+
+Modify `Position.swift`: change `public enum Position: String, CaseIterable, Sendable` to `public enum Position: String, CaseIterable, Sendable, Codable`. No other changes.
+
+- [ ] **Step 6: Tests pass**
+
+Run: `make test`
+Expected: all new BannerText/Rule/RuleStore tests pass; existing tests still pass.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add Sources/BannerShiftCore/BannerText.swift \
+        Sources/BannerShiftCore/Rule.swift \
+        Sources/BannerShiftCore/RuleStore.swift \
+        Sources/BannerShiftCore/Position.swift \
+        Tests/BannerShiftCoreTests/RuleTests.swift \
+        Tests/BannerShiftCoreTests/RuleStoreTests.swift
+git commit -m "feat(core): add BannerText, Rule, RuleStore
+
+- BannerText: value type holding app/title/subtitle/body strings
+  captured from the live banner subtree
+- Rule: Codable rule record with five optional regex patterns plus
+  optional position and animation overrides (plan §22)
+- RuleStore: JSON-in-UserDefaults persistence, corrupt-tolerant
+  (logs and returns empty rather than crashing)
+- Make Position Codable so Rule can persist position overrides"
+```
+
+---
+
+## Task 11C: RuleMatcher (TDD)
+
+**Files:**
+- Create: `Sources/BannerShiftCore/RuleMatcher.swift`
+- Create: `Tests/BannerShiftCoreTests/RuleMatcherTests.swift`
+
+Per spec §22. Given a banner's text and an ordered rule list, returns the first enabled rule whose set patterns all match (case-insensitive, `.dotMatchesNewlines`). Malformed regex disables the offending rule at match time.
+
+- [ ] **Step 1: Write failing tests**
+
+```swift
+// Tests/BannerShiftCoreTests/RuleMatcherTests.swift
+import Testing
+@testable import BannerShiftCore
+
+private let matcher = RuleMatcher()
+
+@Test func emptyRulesReturnNil() {
+    #expect(matcher.match(rules: [], banner: BannerText(appName: "X")) == nil)
+}
+
+@Test func ruleWithNoPatternsIsCatchall() {
+    let catchall = Rule(name: "Catchall")
+    let m = matcher.match(rules: [catchall], banner: BannerText(appName: "Whatever"))
+    #expect(m?.rule.id == catchall.id)
+}
+
+@Test func appPatternMatchesCaseInsensitively() {
+    let rule = Rule(name: "Slack rule", appPattern: "slack")
+    let m = matcher.match(rules: [rule], banner: BannerText(appName: "Slack"))
+    #expect(m?.rule.id == rule.id)
+}
+
+@Test func allSetPatternsMustMatch() {
+    let rule = Rule(name: "Slack DMs", appPattern: "Slack", titlePattern: "^DM")
+    let dm  = matcher.match(rules: [rule], banner: BannerText(appName: "Slack", title: "DM from Alice"))
+    let chn = matcher.match(rules: [rule], banner: BannerText(appName: "Slack", title: "#general"))
+    #expect(dm?.rule.id == rule.id)
+    #expect(chn == nil)
+}
+
+@Test func firstMatchWins() {
+    let a = Rule(name: "A", appPattern: "Slack", position: .middle)
+    let b = Rule(name: "B", appPattern: "Slack", position: .topRight)
+    let m = matcher.match(rules: [a, b], banner: BannerText(appName: "Slack"))
+    #expect(m?.rule.id == a.id)
+}
+
+@Test func disabledRuleSkipped() {
+    let disabled = Rule(name: "Off", enabled: false, appPattern: "Slack", position: .topLeft)
+    let live = Rule(name: "On", appPattern: "Slack", position: .middle)
+    let m = matcher.match(rules: [disabled, live], banner: BannerText(appName: "Slack"))
+    #expect(m?.rule.id == live.id)
+}
+
+@Test func malformedRegexDoesNotMatch() {
+    let bad = Rule(name: "Bad", appPattern: "[unterminated")
+    #expect(matcher.match(rules: [bad], banner: BannerText(appName: "anything")) == nil)
+}
+
+@Test func bundleIDPatternMatchedAgainstResolvedID() {
+    let rule = Rule(name: "Slack only", bundleIDPattern: "tinyspeck\\.slack")
+    let with = matcher.match(rules: [rule],
+                             banner: BannerText(appName: "Slack",
+                                                bundleID: "com.tinyspeck.slackmacgap"))
+    let without = matcher.match(rules: [rule], banner: BannerText(appName: "Slack"))
+    #expect(with != nil)
+    #expect(without == nil)
+}
+```
+
+- [ ] **Step 2: Run, see failures**
+
+Run: `make test`
+Expected: "cannot find 'RuleMatcher' in scope".
+
+- [ ] **Step 3: Implement `RuleMatcher.swift`**
+
+```swift
+import Foundation
+
+public struct RuleMatch: Equatable {
+    public let rule: Rule
+    public init(rule: Rule) { self.rule = rule }
+}
+
+public final class RuleMatcher {
+    public init() {}
+
+    public func match(rules: [Rule], banner: BannerText) -> RuleMatch? {
+        for rule in rules where rule.enabled {
+            if matches(rule, banner) {
+                return RuleMatch(rule: rule)
+            }
+        }
+        return nil
+    }
+
+    private func matches(_ rule: Rule, _ banner: BannerText) -> Bool {
+        check(rule.appPattern,      banner.appName) &&
+        check(rule.bundleIDPattern, banner.bundleID ?? "") &&
+        check(rule.titlePattern,    banner.title) &&
+        check(rule.subtitlePattern, banner.subtitle) &&
+        check(rule.bodyPattern,     banner.body)
+    }
+
+    private func check(_ pattern: String?, _ subject: String) -> Bool {
+        guard let pattern, !pattern.isEmpty else { return true }
+        do {
+            let regex = try Regex(pattern).ignoresCase().dotMatchesNewlines()
+            return subject.firstMatch(of: regex) != nil
+        } catch {
+            return false
+        }
+    }
+}
+```
+
+- [ ] **Step 4: Tests pass**
+
+Run: `make test`
+Expected: 8 RuleMatcher tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Sources/BannerShiftCore/RuleMatcher.swift Tests/BannerShiftCoreTests/RuleMatcherTests.swift
+git commit -m "feat(core): add RuleMatcher
+
+First-match-wins evaluation against BannerText. All set patterns
+must match (case-insensitive). Disabled rules and rules with
+malformed regex are silently skipped (plan §22)."
+```
+
+---
+
+## Task 11D: AnimationFrames (TDD)
+
+**Files:**
+- Create: `Sources/BannerShiftCore/AnimationFrames.swift`
+- Create: `Tests/BannerShiftCoreTests/AnimationFramesTests.swift`
+
+Per spec §22. Pure function from `(style, from, to, fps)` to an array of `(timeOffset, point)` frames. Side-effect-free so the math can be unit-tested without timers. The app-side `Animator` (Task 14C) consumes this schedule and applies it via AX writes.
+
+- [ ] **Step 1: Write failing tests**
+
+```swift
+// Tests/BannerShiftCoreTests/AnimationFramesTests.swift
+import Testing
+import CoreGraphics
+@testable import BannerShiftCore
+
+private let from = CGPoint(x: 0, y: 0)
+private let to   = CGPoint(x: 100, y: 50)
+
+@Test func noneProducesOneFrameAtTarget() {
+    let frames = AnimationFrames.frames(style: .none, from: from, to: to)
+    #expect(frames.count == 1)
+    #expect(frames[0].point == to)
+    #expect(frames[0].timeOffset == 0)
+}
+
+@Test func slideStartsFromAndEndsAtTarget() {
+    let frames = AnimationFrames.frames(style: .slide, from: from, to: to)
+    #expect(frames.first!.point == from)
+    #expect(frames.last!.point  == to)
+    #expect(frames.first!.timeOffset == 0)
+}
+
+@Test func slideFrameCountTracksFps() {
+    let f30  = AnimationFrames.frames(style: .slide, from: from, to: to, fps: 30)
+    let f60  = AnimationFrames.frames(style: .slide, from: from, to: to, fps: 60)
+    #expect(f60.count > f30.count)
+}
+
+@Test func slideTimeOffsetsSorted() {
+    let frames = AnimationFrames.frames(style: .slide, from: from, to: to)
+    let ts = frames.map(\.timeOffset)
+    #expect(ts == ts.sorted())
+}
+
+@Test func shakeStartsAndEndsAtCenter() {
+    let frames = AnimationFrames.frames(style: .shake, from: from, to: to)
+    #expect(frames.first!.point == to)
+    #expect(frames.last!.point  == to)
+}
+
+@Test func bounceVariesYNotX() {
+    let frames = AnimationFrames.frames(style: .bounce, from: from, to: to)
+    let xs = Set(frames.map(\.point.x))
+    let ys = Set(frames.map(\.point.y))
+    #expect(xs.count == 1)
+    #expect(ys.count > 1)
+}
+
+@Test func shakeVariesXNotY() {
+    let frames = AnimationFrames.frames(style: .shake, from: from, to: to)
+    let xs = Set(frames.map(\.point.x))
+    let ys = Set(frames.map(\.point.y))
+    #expect(ys.count == 1)
+    #expect(xs.count > 1)
+}
+```
+
+- [ ] **Step 2: Run, see failures**
+
+Run: `make test`
+Expected: "cannot find 'AnimationFrames' in scope".
+
+- [ ] **Step 3: Implement `AnimationFrames.swift`**
+
+```swift
+import CoreGraphics
+import Foundation
+
+public enum AnimationFrames {
+    public struct Frame: Equatable, Sendable {
+        public let timeOffset: TimeInterval
+        public let point: CGPoint
+
+        public init(timeOffset: TimeInterval, point: CGPoint) {
+            self.timeOffset = timeOffset
+            self.point = point
+        }
+    }
+
+    public static func frames(
+        style: Animation,
+        from: CGPoint,
+        to: CGPoint,
+        fps: Int = 60
+    ) -> [Frame] {
+        switch style {
+        case .none:
+            return [Frame(timeOffset: 0, point: to)]
+        case .slide:
+            return slide(from: from, to: to, duration: 0.200, fps: fps)
+        case .shake:
+            return oscillate(center: to, ax: 10, ay: 0, duration: 0.250, fps: fps)
+        case .bounce:
+            return oscillate(center: to, ax: 0, ay: 10, duration: 0.250, fps: fps)
+        }
+    }
+
+    private static func slide(from: CGPoint, to: CGPoint,
+                              duration: TimeInterval, fps: Int) -> [Frame] {
+        let count = max(1, Int(round(duration * Double(fps))))
+        var out: [Frame] = []
+        out.reserveCapacity(count + 1)
+        for i in 0...count {
+            let t = Double(i) / Double(count)
+            let eased = 1 - pow(1 - t, 3)
+            let p = CGPoint(
+                x: (from.x + (to.x - from.x) * eased).rounded(),
+                y: (from.y + (to.y - from.y) * eased).rounded()
+            )
+            out.append(Frame(timeOffset: t * duration, point: p))
+        }
+        return out
+    }
+
+    private static func oscillate(center: CGPoint, ax: CGFloat, ay: CGFloat,
+                                  duration: TimeInterval, fps: Int) -> [Frame] {
+        let count = max(1, Int(round(duration * Double(fps))))
+        var out: [Frame] = []
+        out.reserveCapacity(count + 1)
+        let cycles = 3.0
+        for i in 0...count {
+            let t = Double(i) / Double(count)
+            let envelope = 1.0 - t
+            let s = sin(2.0 * .pi * cycles * t) * envelope
+            let p = CGPoint(
+                x: (center.x + ax * CGFloat(s)).rounded(),
+                y: (center.y + ay * CGFloat(s)).rounded()
+            )
+            out.append(Frame(timeOffset: t * duration, point: p))
+        }
+        if out.last?.point != center {
+            out.append(Frame(timeOffset: duration, point: center))
+        }
+        return out
+    }
+}
+```
+
+- [ ] **Step 4: Tests pass**
+
+Run: `make test`
+Expected: all 7 AnimationFrames tests pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Sources/BannerShiftCore/AnimationFrames.swift Tests/BannerShiftCoreTests/AnimationFramesTests.swift
+git commit -m "feat(core): add AnimationFrames
+
+Pure function generating (timeOffset, point) frames per style:
+- none: single frame at target
+- slide: easeOutCubic from origin to target over 200ms
+- shake: decaying x-axis oscillation at target over 250ms
+- bounce: decaying y-axis oscillation at target over 250ms
+Side-effect-free so the math is unit-testable without timers."
+```
+
+---
+
 ## Task 12: Info.plist and entitlements
 
 **Files:**
@@ -1689,6 +2345,209 @@ typed attribute helpers used by the rest of the app."
 
 ---
 
+## Task 14A: Banner text extractor
+
+**Files:**
+- Create: `Sources/BannerShift/BannerTextExtractor.swift`
+
+Per spec §22. Walks a banner element's subtree and collects text strings. Best-effort heuristic ordering (first text = app name, then title, subtitle, body); the implementation will likely need tuning after Task 26's live smoke test, similar to the banner-subrole set (§20.1).
+
+- [ ] **Step 1: Implement `BannerTextExtractor.swift`**
+
+```swift
+import ApplicationServices
+import BannerShiftCore
+import CoreGraphics
+import Foundation
+
+enum BannerTextExtractor {
+    /// Collect text from `banner`'s subtree. Returns ordered strings sorted
+    /// top-to-bottom by AX position so the result is deterministic regardless
+    /// of AX-tree traversal order.
+    static func extract(from banner: AXUIElement) -> BannerText {
+        var pairs: [(y: CGFloat, text: String)] = []
+        collect(from: banner, into: &pairs)
+        let ordered = pairs.sorted(by: { $0.y < $1.y }).map(\.text)
+        return BannerText(
+            appName:  ordered.indices.contains(0) ? ordered[0] : "",
+            bundleID: nil,                         // resolved in BannerMover
+            title:    ordered.indices.contains(1) ? ordered[1] : "",
+            subtitle: ordered.indices.contains(2) ? ordered[2] : "",
+            body:     ordered.indices.contains(3) ? ordered[3] : ""
+        )
+    }
+
+    private static func collect(
+        from el: AXUIElement,
+        into out: inout [(y: CGFloat, text: String)]
+    ) {
+        // One string per element: prefer AXValue, then AXTitle, then AXDescription.
+        let text: String? =
+            AXBannerFinder.stringAttribute(el, kAXValueAttribute as CFString) ??
+            AXBannerFinder.stringAttribute(el, kAXTitleAttribute as CFString) ??
+            AXBannerFinder.stringAttribute(el, kAXDescriptionAttribute as CFString)
+        if let t = text, !t.isEmpty {
+            let y = AXBannerFinder.pointAttribute(el, kAXPositionAttribute as CFString)?.y ?? .infinity
+            out.append((y, t))
+        }
+        for child in AXBannerFinder.arrayAttribute(el, kAXChildrenAttribute as CFString) {
+            collect(from: child, into: &out)
+        }
+    }
+}
+```
+
+Note: this is unit-testable only against synthetic AX trees, which is non-trivial. We test it indirectly via Task 26's manual smoke run.
+
+- [ ] **Step 2: Build**
+
+Run: `make build`
+Expected: success.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Sources/BannerShift/BannerTextExtractor.swift
+git commit -m "feat(app): BannerTextExtractor
+
+Walks banner subtree, collects (y, text) pairs, returns BannerText
+sorted top-to-bottom. Heuristic ordering — will likely need tuning
+against real banners (cf. plan §20.1 for the analogous fragility
+around banner subroles)."
+```
+
+---
+
+## Task 14B: App resolver
+
+**Files:**
+- Create: `Sources/BannerShift/AppResolver.swift`
+
+Per spec §22. Best-effort: match an app-name string against `NSWorkspace.shared.runningApplications`' `localizedName` and return the bundle identifier. Nil for background daemons that post via the user-notification framework without appearing in `runningApplications`.
+
+- [ ] **Step 1: Implement `AppResolver.swift`**
+
+```swift
+import AppKit
+import Foundation
+
+enum AppResolver {
+    static func bundleID(forAppName name: String) -> String? {
+        guard !name.isEmpty else { return nil }
+        let lower = name.lowercased()
+        for app in NSWorkspace.shared.runningApplications {
+            if let n = app.localizedName?.lowercased(), n == lower {
+                return app.bundleIdentifier
+            }
+        }
+        return nil
+    }
+}
+```
+
+- [ ] **Step 2: Build**
+
+Run: `make build`
+Expected: success.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Sources/BannerShift/AppResolver.swift
+git commit -m "feat(app): AppResolver
+
+Best-effort bundle-ID resolution via NSWorkspace.runningApplications.
+Returns nil for daemons that post notifications without surfacing
+as running applications (plan §22)."
+```
+
+---
+
+## Task 14C: Animator
+
+**Files:**
+- Create: `Sources/BannerShift/Animator.swift`
+
+Per spec §22. Drives `AnimationFrames` over time, applying each frame's point via `AXUIElementSetAttributeValue`. Supports cancellation per-window so animations don't bleed between bannerss. Untested at the unit-test layer (DispatchQueue + AX I/O); verified end-to-end in Task 26.
+
+- [ ] **Step 1: Implement `Animator.swift`**
+
+```swift
+import ApplicationServices
+import BannerShiftCore
+import CoreGraphics
+import Foundation
+
+final class Animator {
+    /// Default delay before the animation starts, in seconds. Tuned to wait
+    /// out the OS's own banner-entry animation (§22).
+    static let startDelay: TimeInterval = 0.150
+
+    private var workItems: [UInt64: [DispatchWorkItem]] = [:]
+
+    /// Schedule `frames` on the main queue against `window`. Cancels any
+    /// previously scheduled animation for `windowID`.
+    func animate(
+        windowID: UInt64,
+        window: AXUIElement,
+        frames: [AnimationFrames.Frame],
+        delay: TimeInterval = Animator.startDelay
+    ) {
+        cancel(windowID: windowID)
+        var items: [DispatchWorkItem] = []
+        let start = DispatchTime.now() + delay
+        for frame in frames {
+            let item = DispatchWorkItem {
+                Animator.set(point: frame.point, on: window)
+            }
+            DispatchQueue.main.asyncAfter(deadline: start + frame.timeOffset, execute: item)
+            items.append(item)
+        }
+        let totalDuration = (frames.last?.timeOffset ?? 0) + 0.010
+        let cleanup = DispatchWorkItem { [weak self] in
+            self?.workItems.removeValue(forKey: windowID)
+        }
+        DispatchQueue.main.asyncAfter(deadline: start + totalDuration, execute: cleanup)
+        items.append(cleanup)
+        workItems[windowID] = items
+    }
+
+    func cancel(windowID: UInt64) {
+        workItems[windowID]?.forEach { $0.cancel() }
+        workItems.removeValue(forKey: windowID)
+    }
+
+    func cancelAll() {
+        for items in workItems.values { items.forEach { $0.cancel() } }
+        workItems.removeAll()
+    }
+
+    static func set(point: CGPoint, on window: AXUIElement) {
+        var p = point
+        guard let v = AXValueCreate(.cgPoint, &p) else { return }
+        AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
+    }
+}
+```
+
+- [ ] **Step 2: Build**
+
+Run: `make build`
+Expected: success.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Sources/BannerShift/Animator.swift
+git commit -m "feat(app): Animator
+
+Schedules AnimationFrames over DispatchQueue.main, applies each
+point via AXUIElementSetAttributeValue. Per-window cancellation
+so a new debounced pass cleanly supersedes a prior animation."
+```
+
+---
+
 ## Task 15: Notification Center panel detector
 
 **Files:**
@@ -1742,9 +2601,9 @@ full Notification Center open."
 The orchestrator. Per-window state: baselines keyed by element address. On each debounced pass:
 
 1. For each notification UI window:
-   - If panel open → restore baseline (if any), clear it.
-   - Else if banner found → capture baseline on first sight, compute target, apply via `AXUIElementSetAttributeValue`.
-   - Else if window has no banner → restore baseline (if any), clear.
+   - If panel open → restore baseline (if any), clear it; cancel any in-flight animation.
+   - Else if banner found → capture baseline on first sight, extract banner text, resolve bundle ID, consult `RuleMatcher`, compute target position from the matched rule (or default), and drive the animator with the chosen animation style (or `.none`).
+   - Else if window has no banner → restore baseline (if any), clear; cancel animation.
 
 - [ ] **Step 1: Implement `BannerMover.swift`**
 
@@ -1758,30 +2617,52 @@ final class BannerMover {
     private var baselines: [UInt64: Baseline] = [:]
     private let logger: FileLogger
     private let preferences: Preferences
+    private let ruleStore: RuleStore
+    private let matcher: RuleMatcher
+    private let animator: Animator
 
-    init(logger: FileLogger, preferences: Preferences) {
+    init(
+        logger: FileLogger,
+        preferences: Preferences,
+        ruleStore: RuleStore,
+        matcher: RuleMatcher,
+        animator: Animator
+    ) {
         self.logger = logger
         self.preferences = preferences
+        self.ruleStore = ruleStore
+        self.matcher = matcher
+        self.animator = animator
     }
 
     /// Top-level pass: visit each notification UI window and move-or-restore.
     func process(notificationUIWindows windows: [AXUIElement]) {
-        let position = preferences.position
+        let defaultPosition = preferences.position
+        let rules = ruleStore.load()
         let screens = currentScreens()
         for window in windows {
-            processWindow(window, position: position, screens: screens)
+            processWindow(window,
+                          defaultPosition: defaultPosition,
+                          rules: rules,
+                          screens: screens)
         }
     }
 
-    /// Clear all per-window state — used when the notification UI
-    /// process terminates (plan §11).
+    /// Clear all per-window state and cancel in-flight animations.
+    /// Used when the notification UI process terminates (plan §11).
     func reset() {
         baselines.removeAll()
+        animator.cancelAll()
     }
 
     // MARK: Internals
 
-    private func processWindow(_ window: AXUIElement, position: Position, screens: [ScreenInfo]) {
+    private func processWindow(
+        _ window: AXUIElement,
+        defaultPosition: Position,
+        rules: [Rule],
+        screens: [ScreenInfo]
+    ) {
         let id = elementID(window)
 
         // Open Notification Center panel: restore and skip.
@@ -1797,6 +2678,18 @@ final class BannerMover {
             restoreIfNeeded(window: window, id: id)
             return
         }
+
+        // Extract banner text, resolve bundle ID, find matching rule.
+        var bannerText = BannerTextExtractor.extract(from: banner)
+        if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
+            bannerText = BannerText(
+                appName: bannerText.appName, bundleID: bid,
+                title: bannerText.title, subtitle: bannerText.subtitle, body: bannerText.body
+            )
+        }
+        let match = matcher.match(rules: rules, banner: bannerText)
+        let position  = match?.rule.position  ?? defaultPosition
+        let animation = match?.rule.animation ?? .none
 
         // Pick the display the window currently belongs to.
         let centerAX = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
@@ -1827,28 +2720,37 @@ final class BannerMover {
         )
         guard calc.invariantHolds else {
             logger.error("BannerMover: window-height invariant violated " +
-                         "(window=\(baseline.windowFrame.height), screen=\(screen.frame.height)); skipping move")
+                         "(window=\(baseline.windowFrame.height), " +
+                         "screen=\(screen.frame.height)); skipping move")
             return
         }
         let target = calc.targetOrigin(for: position)
-        apply(origin: target, to: window)
-        logger.debug("BannerMover: moved window \(String(format: "%016llx", id)) to \(target) for \(position.rawValue)")
+
+        // Animation `.slide` interpolates from the OS's original origin;
+        // others ignore `from` and oscillate around the target.
+        let from: CGPoint
+        switch animation {
+        case .slide:                  from = baseline.originalOrigin
+        case .none, .shake, .bounce:  from = target
+        }
+        let frames = AnimationFrames.frames(style: animation, from: from, to: target)
+        let delay: TimeInterval = (animation == .none) ? 0 : Animator.startDelay
+        animator.animate(windowID: id, window: window, frames: frames, delay: delay)
+
+        logger.debug(
+            "BannerMover: window=\(String(format: "%016llx", id)) " +
+            "rule=\(match?.rule.name ?? "(default)") " +
+            "position=\(position.rawValue) animation=\(animation.rawValue) " +
+            "target=\(target)"
+        )
     }
 
     private func restoreIfNeeded(window: AXUIElement, id: UInt64) {
         guard let baseline = baselines[id] else { return }
-        apply(origin: baseline.originalOrigin, to: window)
+        animator.cancel(windowID: id)
+        Animator.set(point: baseline.originalOrigin, on: window)
         baselines.removeValue(forKey: id)
         logger.debug("BannerMover: restored window \(String(format: "%016llx", id))")
-    }
-
-    private func apply(origin: CGPoint, to window: AXUIElement) {
-        var p = origin
-        guard let v = AXValueCreate(.cgPoint, &p) else { return }
-        let result = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
-        if result != .success {
-            logger.error("BannerMover: AXUIElementSetAttributeValue failed: \(result.rawValue)")
-        }
     }
 
     private func elementID(_ el: AXUIElement) -> UInt64 {
@@ -1870,7 +2772,7 @@ final class BannerMover {
 
 - [ ] **Step 2: Build**
 
-Run: `swift build`
+Run: `make build`
 Expected: success.
 
 - [ ] **Step 3: Commit**
@@ -1879,9 +2781,13 @@ Expected: success.
 git add Sources/BannerShift/BannerMover.swift
 git commit -m "feat(app): BannerMover orchestrator
 
-Per-window baseline tracking keyed by AX element address. On each
-pass, restores panel/empty windows and moves banner windows to the
-preference-selected position. Skips move when §20.3 invariant fails."
+- Per-window baseline tracking keyed by AX element address
+- Extracts banner text, resolves bundle ID, consults rule matcher
+- Per-banner position + animation: rule override → default
+- Drives Animator with AnimationFrames so .slide / .shake / .bounce
+  produce smooth motion via repeated AX position writes
+- Skips move when §20.3 invariant fails
+- Cancels in-flight animation on restore and on process teardown"
 ```
 
 ---
@@ -2342,7 +3248,7 @@ opens; not destroyed."
 **Files:**
 - Create: `Sources/BannerShift/MenuBarController.swift`
 
-Per §12.
+Per §12 plus the "Rules…" entry from §22 (placed above the position picker).
 
 - [ ] **Step 1: Implement `MenuBarController.swift`**
 
@@ -2355,17 +3261,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let preferences: Preferences
     private let about = AboutWindowController()
     private let onPositionChanged: (Position) -> Void
+    private let onShowRules: () -> Void
     private let onQuit: () -> Void
     private let onHide: () -> Void
 
     init(
         preferences: Preferences,
         onPositionChanged: @escaping (Position) -> Void,
+        onShowRules: @escaping () -> Void,
         onHide: @escaping () -> Void,
         onQuit: @escaping () -> Void
     ) {
         self.preferences = preferences
         self.onPositionChanged = onPositionChanged
+        self.onShowRules = onShowRules
         self.onHide = onHide
         self.onQuit = onQuit
     }
@@ -2400,6 +3309,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let menu = item?.menu else { return }
         menu.removeAllItems()
 
+        // Rules… (above the position picker per spec §22)
+        let rulesItem = NSMenuItem(title: "Rules\u{2026}",
+                                   action: #selector(showRules(_:)),
+                                   keyEquivalent: "")
+        rulesItem.target = self
+        menu.addItem(rulesItem)
+        menu.addItem(.separator())
+
+        // Default-position picker (used when no rule overrides it).
+        let header = NSMenuItem(title: "Default Position", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
         for p in Position.allCases {
             let mi = NSMenuItem(title: p.displayName,
                                 action: #selector(selectPosition(_:)),
@@ -2496,6 +3417,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         about.show()
     }
 
+    @objc private func showRules(_ sender: NSMenuItem) {
+        onShowRules()
+    }
+
     @objc private func quit(_ sender: NSMenuItem) {
         onQuit()
     }
@@ -2504,7 +3429,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
 - [ ] **Step 2: Build**
 
-Run: `swift build`
+Run: `make build`
 Expected: success.
 
 - [ ] **Step 3: Commit**
@@ -2513,9 +3438,498 @@ Expected: success.
 git add Sources/BannerShift/MenuBarController.swift
 git commit -m "feat(app): MenuBarController
 
-NSStatusItem with: 9-position picker, test-notification, launch-at-
-login (3-state), hide-icon (with confirmation), about, quit.
-Menu rebuilds on each open so live state is reflected (plan §12)."
+NSStatusItem with: Rules… entry (above the picker), default-position
+picker, test-notification, launch-at-login (3-state), hide-icon
+(with confirmation), about, quit. Menu rebuilds on each open so
+live state is reflected (plan §12, §22)."
+```
+
+---
+
+## Task 22A: Rule editor window controller
+
+**Files:**
+- Create: `Sources/BannerShift/RuleEditorWindowController.swift`
+
+Per spec §22. Single window with: rules table (left), detail pane (right), sample-text matcher (bottom). Saves on edit-end and on table reorder. Re-opens instantly because the window is hidden, not destroyed, on close. This is the largest single source file in the project; that's acceptable for a self-contained UI controller.
+
+- [ ] **Step 1: Implement `RuleEditorWindowController.swift`**
+
+```swift
+import AppKit
+import BannerShiftCore
+import Foundation
+
+final class RuleEditorWindowController: NSWindowController {
+    private let ruleStore: RuleStore
+    private let matcher = RuleMatcher()
+    private var rules: [Rule] = []
+    private var selectedIndex: Int?
+
+    // List pane
+    private let tableView = NSTableView()
+    private let addButton = NSButton(title: "Add", target: nil, action: nil)
+    private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
+
+    // Detail pane controls
+    private let nameField = NSTextField()
+    private let enabledButton = NSButton(checkboxWithTitle: "Enabled", target: nil, action: nil)
+    private let appField = NSTextField()
+    private let bundleField = NSTextField()
+    private let titleField = NSTextField()
+    private let subtitleField = NSTextField()
+    private let bodyField = NSTextField()
+    private let appError = NSTextField(labelWithString: "")
+    private let bundleError = NSTextField(labelWithString: "")
+    private let titleError = NSTextField(labelWithString: "")
+    private let subtitleError = NSTextField(labelWithString: "")
+    private let bodyError = NSTextField(labelWithString: "")
+    private let positionPopUp = NSPopUpButton()
+    private let animationPopUp = NSPopUpButton()
+
+    // Sample tester
+    private let sampleAppField = NSTextField()
+    private let sampleTitleField = NSTextField()
+    private let sampleSubtitleField = NSTextField()
+    private let sampleBodyField = NSTextField()
+    private let testResultLabel = NSTextField(labelWithString: "No rule matches.")
+
+    init(ruleStore: RuleStore) {
+        self.ruleStore = ruleStore
+        let frame = NSRect(x: 0, y: 0, width: 760, height: 560)
+        let window = NSWindow(contentRect: frame,
+                              styleMask: [.titled, .closable],
+                              backing: .buffered,
+                              defer: false)
+        window.title = "BannerShift Rules"
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
+        rules = ruleStore.load()
+        buildUI()
+        refreshTable()
+        loadDetailForSelection()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    func show() {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // MARK: UI
+
+    private func buildUI() {
+        guard let content = window?.contentView else { return }
+
+        configureTable()
+        addButton.target = self;    addButton.action = #selector(addRule)
+        removeButton.target = self; removeButton.action = #selector(removeRule)
+        let listButtons = NSStackView(views: [addButton, removeButton])
+        listButtons.orientation = .horizontal
+        let scroll = NSScrollView()
+        scroll.documentView = tableView
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let leftStack = NSStackView(views: [scroll, listButtons])
+        leftStack.orientation = .vertical
+        leftStack.alignment = .leading
+        leftStack.spacing = 6
+
+        let detail = makeDetailForm()
+
+        let top = NSStackView(views: [leftStack, detail])
+        top.orientation = .horizontal
+        top.distribution = .fillEqually
+        top.spacing = 16
+
+        let separator = NSBox()
+        separator.boxType = .separator
+
+        let bottom = makeTester()
+
+        let outer = NSStackView(views: [top, separator, bottom])
+        outer.orientation = .vertical
+        outer.alignment = .leading
+        outer.spacing = 12
+        outer.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        outer.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(outer)
+        NSLayoutConstraint.activate([
+            outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            outer.topAnchor.constraint(equalTo: content.topAnchor),
+            outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
+        ])
+    }
+
+    private func configureTable() {
+        let cols: [(String, String, CGFloat)] = [
+            ("on",   "On",   40),
+            ("name", "Name", 140),
+            ("app",  "App",  100),
+            ("rule", "Pos / Anim", 120),
+        ]
+        for (id, title, w) in cols {
+            let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
+            col.title = title
+            col.width = w
+            tableView.addTableColumn(col)
+        }
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.allowsEmptySelection = true
+        tableView.allowsMultipleSelection = false
+        tableView.target = self
+        tableView.action = #selector(tableSelectionChanged(_:))
+        tableView.registerForDraggedTypes([.string])
+    }
+
+    private func makeDetailForm() -> NSView {
+        nameField.placeholderString = "Rule name"
+        enabledButton.target = self; enabledButton.action = #selector(detailChanged)
+        nameField.delegate = self
+        for tf in [appField, bundleField, titleField, subtitleField, bodyField] {
+            tf.delegate = self
+            tf.placeholderString = "regex (empty = wildcard)"
+        }
+        for err in [appError, bundleError, titleError, subtitleError, bodyError] {
+            err.textColor = .systemRed
+            err.font = .systemFont(ofSize: 10)
+        }
+        positionPopUp.addItem(withTitle: "(default)")
+        for p in Position.allCases { positionPopUp.addItem(withTitle: p.displayName) }
+        positionPopUp.target = self; positionPopUp.action = #selector(detailChanged)
+
+        animationPopUp.addItem(withTitle: "(default)")
+        for a in Animation.allCases { animationPopUp.addItem(withTitle: a.displayName) }
+        animationPopUp.target = self; animationPopUp.action = #selector(detailChanged)
+
+        func row(_ label: String, _ control: NSView, _ err: NSView? = nil) -> NSStackView {
+            let l = NSTextField(labelWithString: label)
+            l.alignment = .right
+            l.widthAnchor.constraint(equalToConstant: 90).isActive = true
+            var subs: [NSView] = [l, control]
+            if let err { subs.append(err) }
+            let r = NSStackView(views: subs)
+            r.orientation = .horizontal
+            r.spacing = 6
+            return r
+        }
+
+        let stack = NSStackView(views: [
+            row("Name:",      nameField),
+            row("",           enabledButton),
+            row("App:",       appField,       appError),
+            row("Bundle ID:", bundleField,    bundleError),
+            row("Title:",     titleField,     titleError),
+            row("Subtitle:",  subtitleField,  subtitleError),
+            row("Body:",      bodyField,      bodyError),
+            row("Position:",  positionPopUp),
+            row("Animation:", animationPopUp),
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        return stack
+    }
+
+    private func makeTester() -> NSView {
+        let header = NSTextField(labelWithString: "Test against sample text:")
+        header.font = .boldSystemFont(ofSize: 12)
+        for tf in [sampleAppField, sampleTitleField, sampleSubtitleField, sampleBodyField] {
+            tf.delegate = self
+        }
+        sampleAppField.placeholderString = "App"
+        sampleTitleField.placeholderString = "Title"
+        sampleSubtitleField.placeholderString = "Subtitle"
+        sampleBodyField.placeholderString = "Body"
+        let inputs = NSStackView(views: [sampleAppField, sampleTitleField, sampleSubtitleField, sampleBodyField])
+        inputs.orientation = .horizontal
+        inputs.distribution = .fillEqually
+        inputs.spacing = 6
+        let stack = NSStackView(views: [header, inputs, testResultLabel])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        return stack
+    }
+
+    // MARK: Table ops
+
+    private func refreshTable() {
+        tableView.reloadData()
+        if let i = selectedIndex, rules.indices.contains(i) {
+            tableView.selectRowIndexes(IndexSet(integer: i), byExtendingSelection: false)
+        }
+    }
+
+    @objc private func tableSelectionChanged(_ sender: NSTableView) {
+        selectedIndex = tableView.selectedRow >= 0 ? tableView.selectedRow : nil
+        loadDetailForSelection()
+        updateTestResult()
+    }
+
+    @objc private func addRule() {
+        rules.append(Rule(name: "New Rule"))
+        selectedIndex = rules.count - 1
+        save()
+        refreshTable()
+        loadDetailForSelection()
+    }
+
+    @objc private func removeRule() {
+        guard let i = selectedIndex, rules.indices.contains(i) else { return }
+        rules.remove(at: i)
+        selectedIndex = rules.isEmpty ? nil : min(i, rules.count - 1)
+        save()
+        refreshTable()
+        loadDetailForSelection()
+    }
+
+    // MARK: Detail load/save
+
+    private func loadDetailForSelection() {
+        let r = selectedIndex.flatMap { rules.indices.contains($0) ? rules[$0] : nil }
+        let on = r != nil
+        for c in [nameField, enabledButton, appField, bundleField, titleField,
+                  subtitleField, bodyField, positionPopUp, animationPopUp] as [NSControl] {
+            c.isEnabled = on
+        }
+        guard let r else {
+            nameField.stringValue = ""
+            enabledButton.state = .off
+            for tf in [appField, bundleField, titleField, subtitleField, bodyField] { tf.stringValue = "" }
+            positionPopUp.selectItem(at: 0)
+            animationPopUp.selectItem(at: 0)
+            clearValidation()
+            return
+        }
+        nameField.stringValue = r.name
+        enabledButton.state = r.enabled ? .on : .off
+        appField.stringValue      = r.appPattern      ?? ""
+        bundleField.stringValue   = r.bundleIDPattern ?? ""
+        titleField.stringValue    = r.titlePattern    ?? ""
+        subtitleField.stringValue = r.subtitlePattern ?? ""
+        bodyField.stringValue     = r.bodyPattern     ?? ""
+        positionPopUp.selectItem(at: r.position.flatMap { Position.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        animationPopUp.selectItem(at: r.animation.flatMap { Animation.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        validateAll()
+    }
+
+    @objc private func detailChanged() {
+        guard let i = selectedIndex, rules.indices.contains(i) else { return }
+        var r = rules[i]
+        r.name             = nameField.stringValue
+        r.enabled          = enabledButton.state == .on
+        r.appPattern       = nilIfEmpty(appField.stringValue)
+        r.bundleIDPattern  = nilIfEmpty(bundleField.stringValue)
+        r.titlePattern     = nilIfEmpty(titleField.stringValue)
+        r.subtitlePattern  = nilIfEmpty(subtitleField.stringValue)
+        r.bodyPattern      = nilIfEmpty(bodyField.stringValue)
+        let pi = positionPopUp.indexOfSelectedItem
+        r.position  = pi == 0 ? nil : Position.allCases[pi - 1]
+        let ai = animationPopUp.indexOfSelectedItem
+        r.animation = ai == 0 ? nil : Animation.allCases[ai - 1]
+        rules[i] = r
+        save()
+        validateAll()
+        updateTestResult()
+        tableView.reloadData(forRowIndexes: IndexSet(integer: i),
+                             columnIndexes: IndexSet(integersIn: 0..<tableView.tableColumns.count))
+    }
+
+    private func nilIfEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }
+    private func save() { ruleStore.save(rules) }
+
+    // MARK: Regex validation
+
+    private func validateAll() {
+        validate(appField, into: appError)
+        validate(bundleField, into: bundleError)
+        validate(titleField, into: titleError)
+        validate(subtitleField, into: subtitleError)
+        validate(bodyField, into: bodyError)
+    }
+
+    private func validate(_ field: NSTextField, into err: NSTextField) {
+        field.wantsLayer = true
+        let s = field.stringValue
+        if s.isEmpty {
+            field.layer?.borderWidth = 0
+            err.stringValue = ""
+            return
+        }
+        do {
+            _ = try Regex(s)
+            field.layer?.borderWidth = 0
+            err.stringValue = ""
+        } catch {
+            field.layer?.borderColor = NSColor.systemRed.cgColor
+            field.layer?.borderWidth = 1
+            err.stringValue = "Invalid regex"
+        }
+    }
+
+    private func clearValidation() {
+        for (f, l) in [(appField, appError), (bundleField, bundleError),
+                       (titleField, titleError), (subtitleField, subtitleError),
+                       (bodyField, bodyError)] {
+            f.layer?.borderWidth = 0
+            l.stringValue = ""
+        }
+    }
+
+    // MARK: Sample tester
+
+    @objc fileprivate func updateTestResult() {
+        let banner = BannerText(
+            appName: sampleAppField.stringValue,
+            title: sampleTitleField.stringValue,
+            subtitle: sampleSubtitleField.stringValue,
+            body: sampleBodyField.stringValue
+        )
+        if let match = matcher.match(rules: rules, banner: banner) {
+            testResultLabel.stringValue = "Match: \(match.rule.name)"
+            testResultLabel.textColor = .systemGreen
+        } else {
+            testResultLabel.stringValue = "No rule matches."
+            testResultLabel.textColor = .secondaryLabelColor
+        }
+    }
+}
+
+// MARK: NSTableViewDataSource
+
+extension RuleEditorWindowController: NSTableViewDataSource {
+    func numberOfRows(in tableView: NSTableView) -> Int { rules.count }
+
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+        let item = NSPasteboardItem()
+        item.setString("\(row)", forType: .string)
+        return item
+    }
+
+    func tableView(_ tableView: NSTableView,
+                   validateDrop info: NSDraggingInfo,
+                   proposedRow row: Int,
+                   proposedDropOperation dropOperation: NSTableView.DropOperation) -> NSDragOperation {
+        dropOperation == .above ? .move : []
+    }
+
+    func tableView(_ tableView: NSTableView,
+                   acceptDrop info: NSDraggingInfo,
+                   row: Int,
+                   dropOperation: NSTableView.DropOperation) -> Bool {
+        guard let item = info.draggingPasteboard.pasteboardItems?.first,
+              let s = item.string(forType: .string),
+              let src = Int(s) else { return false }
+        let dst = src < row ? row - 1 : row
+        let moved = rules.remove(at: src)
+        rules.insert(moved, at: min(dst, rules.count))
+        selectedIndex = dst
+        save()
+        refreshTable()
+        return true
+    }
+}
+
+// MARK: NSTableViewDelegate
+
+extension RuleEditorWindowController: NSTableViewDelegate {
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
+                   row: Int) -> NSView? {
+        guard let id = tableColumn?.identifier.rawValue else { return nil }
+        let rule = rules[row]
+        switch id {
+        case "on":
+            let btn = NSButton(checkboxWithTitle: "", target: self, action: #selector(rowEnabledToggled(_:)))
+            btn.state = rule.enabled ? .on : .off
+            btn.tag = row
+            return btn
+        case "name": return NSTextField(labelWithString: rule.name)
+        case "app":  return NSTextField(labelWithString: rule.appPattern ?? "(any)")
+        case "rule":
+            let pos  = rule.position?.displayName  ?? "default"
+            let anim = rule.animation?.displayName ?? "default"
+            return NSTextField(labelWithString: "\(pos) / \(anim)")
+        default: return nil
+        }
+    }
+
+    @objc fileprivate func rowEnabledToggled(_ sender: NSButton) {
+        let row = sender.tag
+        guard rules.indices.contains(row) else { return }
+        rules[row].enabled = sender.state == .on
+        save()
+        if selectedIndex == row { loadDetailForSelection() }
+    }
+}
+
+// MARK: NSTextFieldDelegate
+
+extension RuleEditorWindowController: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        // Sample-tester fields update on every keystroke.
+        if [sampleAppField, sampleTitleField, sampleSubtitleField, sampleBodyField].contains(field) {
+            updateTestResult()
+            return
+        }
+        // Detail regex fields: live-validate; commit happens on focus-end.
+        switch field {
+        case appField:      validate(appField, into: appError)
+        case bundleField:   validate(bundleField, into: bundleError)
+        case titleField:    validate(titleField, into: titleError)
+        case subtitleField: validate(subtitleField, into: subtitleError)
+        case bodyField:     validate(bodyField, into: bodyError)
+        default: break
+        }
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = obj.object as? NSTextField else { return }
+        if [nameField, appField, bundleField, titleField, subtitleField, bodyField].contains(field) {
+            detailChanged()
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Build**
+
+Run: `make build`
+Expected: success.
+
+- [ ] **Step 3: Manual smoke (do this once the AppDelegate wires it, Task 23)**
+
+After Task 23: open the menu bar, click "Rules…", confirm:
+- Window opens centered, 760×560.
+- Click "Add" → "New Rule" appears in the table; detail pane becomes enabled.
+- Type a rule name; tab away → table row updates.
+- Enter an invalid regex like `[unterminated` in the App field → red border + "Invalid regex" appears below.
+- Fix the regex → red border clears.
+- Type in the sample-tester fields → "Match: …" / "No rule matches." updates live.
+- Drag a row to reorder → order persists; closing and re-opening the window shows the new order.
+- Close the window → next open is instant (hidden, not destroyed).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add Sources/BannerShift/RuleEditorWindowController.swift
+git commit -m "feat(app): RuleEditorWindowController
+
+Single-window editor per plan §22:
+- Table: enabled/name/app/pos+anim columns; drag-to-reorder
+- Detail pane: five regex inputs with live validation, position
+  and animation dropdowns (each with a (default) sentinel)
+- Saves on focus-end and on table reorder; no Save button
+- Sample-text tester at the bottom shows which rule wins
+- Hidden (not destroyed) on close so re-open is instant"
 ```
 
 ---
@@ -2526,7 +3940,7 @@ Menu rebuilds on each open so live state is reflected (plan §12)."
 - Create: `Sources/BannerShift/AppDelegate.swift`
 - Modify: `Sources/BannerShift/main.swift`
 
-Top-level wiring. Owns: `Preferences`, `FileLogger`, `BannerMover`, `Debouncer`, `AXObserverController`, `NotificationUIWatcher`, `MenuBarController`.
+Top-level wiring. Owns: `Preferences`, `FileLogger`, `RuleStore`, `RuleMatcher`, `Animator`, `BannerMover`, `Debouncer`, `AXObserverController`, `NotificationUIWatcher`, `MenuBarController`, `RuleEditorWindowController`.
 
 - [ ] **Step 1: Replace `main.swift`**
 
@@ -2552,6 +3966,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private var logger: FileLogger!
     private var osLog = Logger(subsystem: Constants.bundleIdentifier, category: "app")
+    private var ruleStore: RuleStore!
+    private let matcher = RuleMatcher()
+    private let animator = Animator()
+    private var ruleEditor: RuleEditorWindowController!
     private var mover: BannerMover!
     private var debouncer: Debouncer!
     private var axObserver: AXObserverController?
@@ -2580,25 +3998,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil); return
         }
 
-        // 3. Wire core machinery.
-        mover = BannerMover(logger: logger, preferences: preferences)
+        // 3. Rule store + editor.
+        ruleStore = RuleStore(
+            defaults: .standard,
+            logger: { [weak self] msg in self?.logger.error(msg) }
+        )
+        ruleEditor = RuleEditorWindowController(ruleStore: ruleStore)
+
+        // 4. Banner mover machinery.
+        mover = BannerMover(
+            logger: logger,
+            preferences: preferences,
+            ruleStore: ruleStore,
+            matcher: matcher,
+            animator: animator
+        )
         debouncer = Debouncer(interval: Constants.eventDebounceInterval, queue: .main)
 
-        // 4. Workspace observers; start the AX observer when the
+        // 5. Workspace observers; start the AX observer when the
         //    notification UI process is up.
         watcher = NotificationUIWatcher(
             logger: logger,
-            onUp: { [weak self] pid in self?.bringUpObserver(pid: pid) },
-            onDown: { [weak self] in self?.tearDownObserver() }
+            onUp:   { [weak self] pid in self?.bringUpObserver(pid: pid) },
+            onDown: { [weak self] in    self?.tearDownObserver() }
         )
         watcher.start()
 
-        // 5. Menu bar.
+        // 6. Menu bar.
         menuBar = MenuBarController(
             preferences: preferences,
             onPositionChanged: { [weak self] _ in self?.kickPass() },
-            onHide: { /* nothing extra to do */ },
-            onQuit: { NSApp.terminate(nil) }
+            onShowRules:       { [weak self] in self?.ruleEditor.show() },
+            onHide:            { /* nothing extra to do */ },
+            onQuit:            { NSApp.terminate(nil) }
         )
         if !preferences.iconHidden {
             menuBar.show()
@@ -2647,7 +4079,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 - [ ] **Step 3: Build**
 
-Run: `swift build`
+Run: `make build`
 Expected: success.
 
 - [ ] **Step 4: Commit**
@@ -2656,9 +4088,10 @@ Expected: success.
 git add Sources/BannerShift/main.swift Sources/BannerShift/AppDelegate.swift
 git commit -m "feat(app): AppDelegate wires everything
 
-Permission gate → logger → workspace watcher → AX observer →
-debouncer → BannerMover. Hidden-icon reveal on app activation.
-Clean shutdown closes the log handle (plan §22)."
+Permission gate → logger → rule store + editor → matcher + animator
+→ BannerMover → workspace watcher → AX observer → debouncer → menu
+bar (with onShowRules). Hidden-icon reveal on app activation. Clean
+shutdown closes the log handle (plan §22)."
 ```
 
 ---
@@ -3106,17 +4539,17 @@ git log --oneline | head -30
 ## Self-Review
 
 **Spec coverage (cross-referenced to plan.md sections):**
-- §3 LSUIElement, no Dock, no main window — Task 12 (Info.plist), Task 21 (about window is transient).
+- §3 LSUIElement, no Dock, no main window — Task 12 (Info.plist), Task 21 (about window is transient), Task 22A (rule editor is utility-styled).
 - §4 Launch flow, accessibility-or-exit — Task 13, Task 23.
-- §5 Nine positions, persistence, default to Top Middle — Task 3, Task 4.
-- §6 Banner discovery, display selection — Task 7, Task 14, Task 16.
+- §5 Nine positions, default-position persistence — Task 3, Task 4.
+- §6 Banner discovery, display selection, banner text capture, rule matching — Task 7, Task 14, Task 14A, Task 14B, Task 16.
 - §7 Position math — Task 8.
 - §8 Baseline — Task 5, Task 16.
 - §9 Panel detection — Task 15, Task 16.
 - §10 Debounce — Task 9, Task 23.
 - §11 NC UI lifecycle — Task 17, Task 18, Task 23 (with §11 dedup fix in Task 10).
-- §12 Menu bar — Task 22; sub-items: 12.1 picker (✓), 12.3 test notification (Task 19), 12.5 launch at login (Task 20), 12.6 hide icon (✓ in MenuBar + AppDelegate reveal), 12.8 about (Task 21), 12.9 quit (✓).
-- §13 Persistence — Task 4.
+- §12 Menu bar — Task 22; sub-items: rules entry (§22 — Task 22), default-position picker (✓), test notification (Task 19), launch at login (Task 20), hide icon (✓ in MenuBar + AppDelegate reveal), about (Task 21), quit (✓).
+- §13 Persistence (incl. rules JSON) — Task 4, Task 11B.
 - §14 Logging — Task 11 (file), Task 23 (os_log).
 - §15 Concurrency model — implicit; all main-thread work.
 - §16 Permissions — Task 13, Task 19.
@@ -3124,18 +4557,24 @@ git log --oneline | head -30
 - §18 Build & release — Task 24, Task 25.
 - §19 Versioning — Info.plist `CFBundleShortVersionString` (Task 12); about window reads it (Task 21).
 - §20 Fragilities — Constants.swift (Task 2), invariant check in Task 8/16.
-- §22 Re-implementation checklist — all items above.
+- §22 Rules and Animations — Tasks 11A (Animation enum), 11B (BannerText, Rule, RuleStore), 11C (RuleMatcher), 11D (AnimationFrames), 14A (BannerTextExtractor), 14B (AppResolver), 14C (Animator), 16 (consumer), 22 (menu entry), 22A (editor window), 23 (wiring).
+- §23 Re-implementation checklist — all items above.
 
 **Placeholder scan:** No "TODO"/"TBD"/"similar to" in tasks. Code blocks are complete.
 
 **Type consistency:**
-- `Position` rawValues consistent across Tasks 3, 4.
+- `Position` rawValues consistent across Tasks 3, 4, 11B (Codable extension), 22A, BannerMover.
+- `Animation` rawValues consistent across Tasks 11A, 11B, 11D, 14C, 16, 22A.
 - `Baseline` field names (`originalOrigin`, `windowFrame`, `bannerFrame`) consistent across Tasks 5, 16.
 - `ScreenInfo` fields (`frame`, `visibleFrame`, `isPrimary`) consistent in Tasks 6, 7, 8, 16.
 - `Constants` names consistent: `dockPadding`, `bannerRightInset`, `bundleIdentifier`, `notificationUIBundleIdentifier`, `bannerSubroles`, `notificationCenterPanelIdentifier`, `eventDebounceInterval`, `maxLogFileSize`.
 - `Preferences` methods: `position` (var), `iconHidden` (var), `debugLoggingEnabled` (get-only), `setDebugLogging`.
 - `Debouncer.schedule(_:)` / `.cancel()` consistent in Tasks 9, 23.
 - `BannerMover.process(notificationUIWindows:)` / `.reset()` consistent in Tasks 16, 23.
+- `RuleStore.load() -> [Rule]` / `.save(_:)` consistent in Tasks 11B, 22A, 23.
+- `RuleMatcher.match(rules:banner:) -> RuleMatch?` consistent in Tasks 11C, 16, 22A.
+- `BannerText` init signature consistent in Tasks 11B, 14A, 16, 22A.
+- `Animator.animate(windowID:window:frames:delay:)` / `.cancel(windowID:)` / `.cancelAll()` / static `.set(point:on:)` consistent in Tasks 14C, 16.
 
 No inconsistencies found.
 
