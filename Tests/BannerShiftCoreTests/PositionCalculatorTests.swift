@@ -86,7 +86,10 @@ private func makeCalc(
 }
 
 @Test func windowHeightMismatchIsRejected() {
-  // Spec §20.3: assert the window is the height of the display.
+  // Guard against the OS's full-screen container window invariant
+  // breaking: notification UI windows are always exactly the height of
+  // the display they live on. If that stops holding (an OS change), our
+  // coordinate math is unsafe and we refuse to reposition.
   let calc = makeCalc(
     windowFrame: CGRect(x: 0, y: 0, width: 1920, height: 800)  // wrong height
   )
@@ -98,8 +101,8 @@ private func makeCalc(
 }
 
 @Test func targetOriginIsAlwaysIntegerForAllPositionsAndScreens() {
-  // Image-fidelity guard (plan §7.1): every emitted target origin must
-  // have integer x and y so the banner renders crisp at any DPI.
+  // Image-fidelity guard: every emitted target origin must have integer
+  // x and y so the banner renders crisp at any DPI.
   let screens: [ScreenInfo] = [
     ScreenInfo(
       frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
@@ -135,10 +138,12 @@ private func makeCalc(
 }
 
 @Test func multiMonitorUsesPrimaryHeightAsAXFlipPivot() {
-  // Spec §20.4 invariant. Primary 1920x1080 at AppKit (0, 0). Secondary
-  // 1366x768 positioned ABOVE the primary at AppKit (0, 1080). The
-  // secondary's notification UI window sits at AX (0, -768) — negative
-  // because secondary's top edge is above the primary's top in AX coords.
+  // Multi-monitor AX flip invariant: AX coordinates flip the y axis
+  // around the *primary* display's height, not the screen the window
+  // belongs to. Primary 1920x1080 at AppKit (0, 0). Secondary 1366x768
+  // positioned ABOVE the primary at AppKit (0, 1080). The secondary's
+  // notification UI window sits at AX (0, -768), negative because
+  // secondary's top edge is above the primary's top in AX coords.
   let primary = ScreenInfo(
     frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
     visibleFrame: CGRect(x: 0, y: 25, width: 1920, height: 1055),

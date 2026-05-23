@@ -11,8 +11,6 @@ The system normally posts every banner at the top-right corner. BannerShift lets
 - Runs as a per-user background agent (`LSUIElement=true`). No Dock icon, no main window. Optional menu-bar icon for the position picker, rules editor, test notification, launch-at-login toggle, and about/quit.
 - Single process, single user, no network, no telemetry. Requires only Accessibility permission.
 
-For the full functional specification, see [`plan.md`](plan.md). For the task-by-task implementation plan, see [`docs/superpowers/plans/2026-05-22-banner-shift.md`](docs/superpowers/plans/2026-05-22-banner-shift.md).
-
 ## Install (dev build)
 
 Until a notarized release is published, build locally:
@@ -23,7 +21,7 @@ make build         # incremental SwiftPM build
 open build/BannerShift.app
 ```
 
-On first launch, macOS will prompt for Accessibility permission. Grant it in System Settings, then relaunch BannerShift. (The app intentionally terminates on a denied permission rather than running in a degraded mode; see plan §4.)
+On first launch, macOS will prompt for Accessibility permission. Grant it in System Settings, then relaunch BannerShift. The app intentionally terminates on a denied permission rather than running in a degraded mode.
 
 ## Use
 
@@ -54,7 +52,7 @@ make tail-log     # tail ~/Library/Logs/BannerShift.log
 The project is split between two SwiftPM targets:
 
 - `BannerShiftCore` (library, in `Sources/BannerShiftCore/`): pure value types and pure logic. Fully unit-tested, no system-API dependencies.
-- `BannerShift` (executable, in `Sources/BannerShift/`): AppKit + Accessibility integration. Verified via the manual smoke pass in plan §22 / impl-plan Task 26.
+- `BannerShift` (executable, in `Sources/BannerShift/`): AppKit + Accessibility integration. Verified via a manual smoke pass against real macOS notifications.
 
 Tests live under `Tests/BannerShiftCoreTests/` using Swift Testing (`@Test`, `#expect`). Run with `make test`.
 
@@ -127,9 +125,8 @@ Then visit the Actions tab, approve the `release-signing` environment when promp
 
 ```
 .
-├── Makefile                      # build/test/format/validate driver (workbench-platform pattern)
+├── Makefile                      # build/test/format/validate driver
 ├── Package.swift                 # SwiftPM manifest (macOS 13+, swift-testing dep)
-├── plan.md                       # functional specification (23 sections)
 ├── populate-secrets.sh           # 1Password -> .env materializer
 ├── release.sh                    # Developer ID sign + notarize + staple + package
 ├── Resources/
@@ -139,14 +136,13 @@ Then visit the Actions tab, approve the `release-signing` environment when promp
 │   ├── BannerShiftCore/          # pure logic + value types (unit-tested)
 │   └── BannerShift/              # AppKit + AX integration (executable)
 ├── Tests/BannerShiftCoreTests/   # Swift Testing, 75 tests
-├── docs/superpowers/plans/       # task-by-task implementation plan
 └── scripts/
     └── build-dev.sh              # universal binary, ad-hoc signed
 ```
 
 ## Constraints and known fragilities
 
-BannerShift depends on a small number of undocumented macOS behaviors (banner accessibility subroles, the Notification Center panel identifier, the full-screen container window invariant). When Apple changes any of these across a major macOS release, the corresponding constants in `Sources/BannerShiftCore/Constants.swift` need updating. See plan.md §20 for the full list.
+BannerShift depends on a small number of undocumented macOS behaviors (banner accessibility subroles, the Notification Center panel identifier, the full-screen container window invariant). When Apple changes any of these across a major macOS release, the corresponding constants in `Sources/BannerShiftCore/Constants.swift` need updating; the doc comments on each constant identify what it represents and how it can break.
 
 ## License
 

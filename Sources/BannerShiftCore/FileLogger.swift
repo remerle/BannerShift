@@ -13,9 +13,9 @@ import Foundation
 ///   for the lifetime of the logger.
 /// - Each line is prefixed with a level tag and an ISO-8601 timestamp.
 /// - `debug` calls are gated on a live closure check so toggling the debug
-///   preference via `defaults write` takes effect without relaunch (spec §14).
+///   preference via `defaults write` takes effect without relaunch.
 /// - At construction, if the file exceeds `Constants.maxLogFileSize` it is
-///   truncated (plan deviation #3; spec was silent on rotation).
+///   truncated.
 public final class FileLogger {
   public enum Level: String {
     case info = "INFO"

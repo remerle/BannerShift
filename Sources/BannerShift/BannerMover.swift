@@ -41,7 +41,9 @@ final class BannerMover {
   }
 
   /// Clear all per-window state and cancel in-flight animations.
-  /// Used when the notification UI process terminates (plan §11).
+  /// Called when the notification UI process (`NotificationCenter`) exits,
+  /// because every AX element we were tracking is now invalid and any
+  /// in-flight animation would be writing positions to dangling pointers.
   func reset() {
     baselines.removeAll()
     animator.cancelAll()
@@ -128,11 +130,11 @@ final class BannerMover {
     }
     let target = calc.targetOrigin(for: position)
 
-    // Dispatch per animation style. Spec §7.1(2) requires that for shake/bounce
-    // the banner snap to the target *immediately* (so the OS-default location
-    // is never briefly visible), and that only the oscillation waits 150 ms for
-    // the OS's own banner-entry animation to finish. Slide is the exception:
-    // its first frame is the OS-original position, so it must wait the 150 ms
+    // Dispatch per animation style. For shake/bounce the banner must snap
+    // to the target *immediately* (so the OS-default location is never
+    // briefly visible), and only the oscillation waits 150 ms for the OS's
+    // own banner-entry animation to finish. Slide is the exception: its
+    // first frame is the OS-original position, so it must wait the 150 ms
     // before any frame fires.
     switch animation {
     case .none:

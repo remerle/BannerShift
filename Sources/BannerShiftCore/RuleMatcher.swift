@@ -23,16 +23,17 @@ public final class RuleMatcher {
   // Cache keyed by raw pattern string. Pattern strings are stable for the
   // lifetime of a rule, so a stale entry can only exist if a rule's
   // pattern text is mutated; in that case a fresh entry is compiled on
-  // the next call and the old one sits unused. The plan-§22 contract is
-  // that a malformed pattern disables the *containing rule*, not that
-  // every pattern compiles successfully, so we cache successes only.
+  // the next call and the old one sits unused. A malformed pattern
+  // disables the *containing rule*, not the entire matcher, so we cache
+  // successful compilations only and re-attempt failures each call (they
+  // are surfaced via `diagnosticLogger` rather than swallowed).
   private var regexCache: [String: Regex<AnyRegexOutput>] = [:]
   private let cacheLock = NSLock()
 
   /// - Parameter diagnosticLogger: optional sink invoked when a rule's
-  ///   pattern fails to compile. Plan §22 requires that a malformed
-  ///   pattern never be silently ignored; the matcher emits a diagnostic
-  ///   and treats the containing rule as disabled for that match.
+  ///   pattern fails to compile. A malformed pattern must never be
+  ///   silently ignored; the matcher emits a diagnostic and treats the
+  ///   containing rule as disabled for that match.
   public init(diagnosticLogger: ((String) -> Void)? = nil) {
     self.diagnosticLogger = diagnosticLogger
   }

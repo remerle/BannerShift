@@ -55,11 +55,11 @@ private let to = CGPoint(x: 100, y: 50)
 }
 
 @Test func everyFrameLandsOnIntegerPoints() {
-  // Image-fidelity guard (plan §7.1): every animation frame must emit
-  // an integer-point target so the banner renders crisp throughout the
-  // animation, not just at the final settle position. Sweep all styles
-  // with off-axis from/to so the sine envelope and ease curve hit
-  // fractional intermediates pre-rounding.
+  // Image-fidelity guard: every animation frame must emit an integer-point
+  // target so the banner renders crisp throughout the animation, not just
+  // at the final settle position. Sweep all styles with off-axis from/to
+  // so the sine envelope and ease curve hit fractional intermediates
+  // pre-rounding.
   let fromVariants: [CGPoint] = [.zero, CGPoint(x: 0.5, y: 0.5), CGPoint(x: 13, y: 27)]
   let toVariants: [CGPoint] = [
     CGPoint(x: 100, y: 50),

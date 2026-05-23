@@ -2,15 +2,22 @@ import CoreGraphics
 
 /// Computes the target *window origin* in AX (top-left origin) coordinates such
 /// that the banner inside the window lands on the chosen 3x3 cell of the chosen
-/// display. See spec §7, §20.3, and §20.4.
+/// display.
+///
+/// AX exposes window position only — not the banner's frame inside the window —
+/// so the math has to account for the banner's offset within its container
+/// window. The notification UI process places banners inside a full-display
+/// container window whose height equals the display's height; that invariant
+/// is checked by `invariantHolds` and any caller should bail when it fails.
 public struct PositionCalculator {
   public let windowFrame: CGRect
   public let bannerFrame: CGRect
   public let screen: ScreenInfo
-  /// AppKit→AX y-flip pivot. Spec §20.4: this must be the *primary* display's
-  /// height, not the chosen display's height. Same-height monitor setups
-  /// accidentally land on the correct value either way; heterogeneous-height
-  /// multi-monitor setups need the primary pivot.
+  /// AppKit→AX y-flip pivot. Must be the *primary* display's height, not the
+  /// chosen display's height. Same-height monitor setups land on the correct
+  /// value either way; heterogeneous-height multi-monitor setups will mis-place
+  /// banners on the non-primary display if the chosen display's height is used
+  /// here.
   public let primaryHeight: CGFloat
 
   public init(
@@ -25,7 +32,10 @@ public struct PositionCalculator {
     self.primaryHeight = primaryHeight
   }
 
-  /// True iff the AX container window is the height of the display (§20.3).
+  /// True iff the AX container window is the full height of the display. This
+  /// is the invariant the rest of the math depends on; callers must check it
+  /// before trusting `targetOrigin(for:)`. Violations are typically caused by
+  /// a macOS update changing the notification UI's window layout.
   public var invariantHolds: Bool {
     windowFrame.size.height == screen.frame.size.height
   }

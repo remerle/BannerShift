@@ -1,13 +1,15 @@
 import CoreGraphics
 import Foundation
 
-/// Pure function from `(style, from, to, fps)` to an array of `(timeOffset, point)`
-/// frames. Side-effect-free so the math can be unit-tested without timers. See
-/// spec §22.
+/// Pure function from `(style, from, to, fps)` to an array of
+/// `(timeOffset, point)` frames. Side-effect-free so the math can be
+/// unit-tested without timers; the executable side schedules the points via
+/// `Animator`.
 ///
-/// Every emitted frame is snapped to integer points (plan §7.1 fidelity guard)
-/// so the banner renders crisply throughout the animation, not just at the
-/// final settle position.
+/// Every emitted frame is snapped to integer points so the banner renders
+/// crisply throughout the animation, not just at the final settle position.
+/// Sub-pixel positions on intermediate frames produce blurry, jittery motion
+/// even though the final landing point looks correct.
 public enum AnimationFrames {
   public struct Frame: Equatable, Sendable {
     public let timeOffset: TimeInterval

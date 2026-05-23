@@ -1,9 +1,11 @@
 import CoreGraphics
 
 public struct ObserverKey: Hashable, Sendable {
-  /// Stable opaque address of the underlying AX element. Pointer identity
-  /// for AXUIElement is stable across attribute changes (incl. moves)
-  /// within a single notification UI process lifetime (plan §8, §20.5).
+  /// Stable opaque address of the underlying AX element. `AXUIElement`
+  /// pointer identity is stable across attribute changes (including geometry
+  /// moves) within a single notification UI process lifetime; tearing down
+  /// and recreating that process invalidates every prior `elementID` and the
+  /// keyed maps in `BannerMover` must be cleared at that point.
   public let elementID: UInt64
   public let role: String
   public let subrole: String

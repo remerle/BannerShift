@@ -49,8 +49,9 @@ private let matcher = RuleMatcher()
 }
 
 @Test func malformedRegexInvokesDiagnosticLogger() {
-  // plan §22: a malformed pattern must never be silently swallowed. The
-  // matcher emits a diagnostic and treats the containing rule as disabled.
+  // A malformed pattern must never be silently swallowed. The matcher
+  // emits a diagnostic and treats the containing rule as disabled so the
+  // user has a trail to follow when an "obvious" rule stops matching.
   var diagnostics: [String] = []
   let m = RuleMatcher(diagnosticLogger: { diagnostics.append($0) })
   let bad = Rule(name: "BrokenRule", appPattern: "[unterminated")

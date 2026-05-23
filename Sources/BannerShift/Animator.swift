@@ -5,7 +5,8 @@ import Foundation
 
 final class Animator {
   /// Default delay before the animation starts, in seconds. Tuned to wait
-  /// out the OS's own banner-entry animation (§22).
+  /// out the OS's own banner-entry animation so our motion begins from a
+  /// settled banner rather than fighting the system animation.
   static let startDelay: TimeInterval = 0.150
 
   private var workItems: [UInt64: [DispatchWorkItem]] = [:]

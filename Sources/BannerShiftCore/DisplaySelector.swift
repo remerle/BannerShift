@@ -26,13 +26,13 @@ public struct DisplaySelector {
     activeScreenFallback: ScreenInfo? = nil
   ) -> ScreenInfo? {
     guard let primary = primary else { return nil }
-    // Spec §20.4. AX coordinates are top-left, anchored at the primary
-    // display's top-left. Convert an AppKit (bottom-left, primary-anchored)
-    // y to AX y via `primary.frame.height - appkit_y`. PositionCalculator
-    // uses the same pivot for the same reason. Using `frame.height` rather
-    // than `frame.maxY` is valid because macOS guarantees the primary
-    // display's AppKit origin is (0, 0); on heterogeneous-height multi-monitor
-    // setups only the primary height gives the correct conversion.
+    // AX coordinates are top-left, anchored at the primary display's
+    // top-left. Convert an AppKit (bottom-left, primary-anchored) y to AX
+    // y via `primary.frame.height - appkit_y`. `PositionCalculator` uses
+    // the same pivot for the same reason. Using `frame.height` rather than
+    // `frame.maxY` is valid because macOS guarantees the primary display's
+    // AppKit origin is (0, 0); on heterogeneous-height multi-monitor setups
+    // only the primary height gives the correct conversion.
     let appKitY = primary.frame.height - axPoint.y
     let appKitPoint = CGPoint(x: axPoint.x, y: appKitY)
     if let match = screens.first(where: { $0.frame.contains(appKitPoint) }) {

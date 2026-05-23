@@ -50,8 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ruleEditor = RuleEditorWindowController(ruleStore: ruleStore)
 
     // 4. Banner mover machinery. The matcher receives a diagnostic sink
-    //    so malformed regex (plan §22) is surfaced to the log rather
-    //    than silently disabling the rule.
+    //    so a malformed regex is surfaced to the log rather than silently
+    //    disabling the rule with no user-visible trace.
     matcher = RuleMatcher(
       diagnosticLogger: { [weak self] msg in self?.logger.error(msg) }
     )

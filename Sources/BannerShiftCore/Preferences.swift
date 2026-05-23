@@ -28,8 +28,10 @@ public final class Preferences {
     set { defaults.set(newValue, forKey: Self.iconHiddenKey) }
   }
 
-  /// Read live on each access so flipping the flag in `defaults write`
-  /// takes effect without a relaunch (§14).
+  /// Read live on each access so flipping the flag via
+  /// `defaults write com.emerle.BannerShift debugLoggingEnabled -bool YES`
+  /// takes effect without a relaunch. `FileLogger` re-evaluates this on
+  /// every `debug(_:)` call for the same reason.
   public var debugLoggingEnabled: Bool {
     get { defaults.bool(forKey: Self.debugLoggingKey) }
     set { defaults.set(newValue, forKey: Self.debugLoggingKey) }

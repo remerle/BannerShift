@@ -55,7 +55,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     guard let menu = item?.menu else { return }
     menu.removeAllItems()
 
-    // Rules… (above the position picker per spec §22)
+    // Rules… is the most action-oriented item, so it sits at the top
+    // above the read-only default-position picker.
     let rulesItem = NSMenuItem(
       title: "Rules\u{2026}",
       action: #selector(showRules(_:)),

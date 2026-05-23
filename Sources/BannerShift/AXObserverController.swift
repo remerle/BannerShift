@@ -14,14 +14,14 @@ final class AXObserverController {
   private var handler: EventHandler?
   private let logger: FileLogger
 
-  // Spec §4.3 requires observation of window creation, banner element creation,
-  // and window destruction. The macOS AX API does not expose a dedicated
-  // "children changed" notification; descendant-created (kAXCreatedNotification)
-  // covers the children-changed semantics from spec §4.3 by firing whenever any
-  // new AXUIElement is created in the observed process, which is how we catch
+  // We must observe window creation, banner element creation, and window
+  // destruction to react to every banner-lifecycle event. The macOS AX API
+  // does not expose a dedicated "children changed" notification;
+  // kAXCreatedNotification fills the gap by firing whenever any new
+  // AXUIElement is created in the observed process, which is how we catch
   // banners that appear inside an already-existing notification UI window.
-  // kAXLayoutChangedNotification catches geometry-only updates that don't create
-  // new elements.
+  // kAXLayoutChangedNotification catches geometry-only updates that don't
+  // create new elements.
   private static let notifications: [String] = [
     kAXWindowCreatedNotification,
     kAXCreatedNotification,
