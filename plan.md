@@ -104,6 +104,25 @@ The final target origin is snapped to integer points. The operating system clamp
 
 The math depends on one un-documented invariant: that the notification UI container window's height equals the display's height. This has held from macOS 12 through 26 but is not contractually guaranteed; the application should assert this invariant at runtime so a future regression is loud rather than silent.
 
+## 7.1 Image Fidelity
+
+Because the application moves a window every time a banner appears (and, with animations, repeatedly during a single banner's lifetime), it must avoid introducing visual blur or sub-pixel rendering artifacts. The known failure modes and the application's mitigations:
+
+1. **Non-integer point coordinates.** macOS renders crisp text and vector content only when the window's origin is an integer point. Even on a 2× Retina display, the origin must be integer in points (the OS handles the device-pixel-grid alignment internally). Mitigation: every target origin emitted by the position calculator (§7) and every intermediate point emitted by the animator (§22) is rounded to integers before being passed to the accessibility position attribute. This is enforced by tests that sweep across positions and animation styles and assert integer-only output.
+
+2. **Writes during the OS's own banner-entry animation.** When the operating system first posts a banner, it animates the window into view from the right edge of the display over roughly 150 ms. If the application sets the position while that animation is in flight, the operating system may briefly interpolate between *its* intended end position and the application's, producing a one- or two-frame visual tear (not persistent blur, but visible). The application accepts this tear for the initial move because the alternative — delaying the move 150 ms — produces a visible "banner appears at the OS location, then jumps" effect that is worse. For user-opted-in animations (§22 — slide, shake, bounce), the animator waits 150 ms after the initial snap before starting, so animation frames never overlap the OS's own entry animation.
+
+3. **Sub-pixel jitter during animation.** Same root cause as (1); same mitigation. Every animation frame's point is rounded before emit. Tested.
+
+4. **Backing-scale mismatch when crossing displays.** Banners normally stay on the display where the OS originally posted them, and the application's display selection (§6) reflects that. If a user physically drags the banner-owning display between attached monitors mid-banner, the window's backing surface may briefly render at the wrong scale until macOS refreshes it. Not currently mitigated; considered acceptable.
+
+5. **Repeated writes amplifying any of the above.** The debouncer (§10) collapses event bursts so the application never issues more than one move per ~30 ms quiet window per banner. The animator (§22) limits per-banner animation writes to ≤20.
+
+Verification:
+
+- Automated: tests in the position calculator and animation-frames modules assert integer-only output across a sweep of inputs.
+- Manual: the smoke test (§22's re-implementation checklist item 5 / the manual integration test) includes a fidelity check — observe a real banner under each animation style and visually confirm the text is crisp.
+
 ## 8. The "Baseline" Concept
 
 Once the application has moved a banner window, subsequent accessibility events on that same window will report the *moved* position and frame, not the OS's original layout. If the application were to recompute the target from the post-move frame, it would drift on every event.
@@ -151,21 +170,23 @@ The application registers two workspace-level observers:
 - One for "an application terminated." When the terminated application's bundle identifier matches the notification UI process, the application releases its accessibility observer and clears all tracked state (observed window keys, moved-window record).
 - One for "an application launched." When the launched application's bundle identifier matches the notification UI process, the application performs a fresh observer setup — creating a new accessibility observer, attaching it to the new process, and registering for the standard set of notifications.
 
-Reattachment must be idempotent and must not double-register observers if it is somehow triggered twice. The observer dedup set is keyed by a deterministic tuple of role, subrole, and size of the observed window so that re-registration of the same window does not produce duplicate registrations. Crucially, the dedup key does *not* include the window's position, because position changes every time the application moves a window. If position were included, the same physical window would generate a new key on every move and the observer set would grow unboundedly.
+Reattachment must be idempotent and must not double-register observers if it is somehow triggered twice. The observer dedup set is keyed by a deterministic tuple of role, subrole, size, and the accessibility-element pointer identity of the observed window so that re-registration of the same window does not produce duplicate registrations. Element identity is included because role+subrole+size alone collides when two stacked banners happen to share dimensions; pointer identity is stable within a window's lifetime (§8) and disambiguates the case. Crucially, the dedup key does *not* include the window's position, because position changes every time the application moves a window. If position were included, the same physical window would generate a new key on every move and the observer set would grow unboundedly.
 
 ## 12. Menu Bar Surface
 
 When the menu-bar icon is enabled, the status item displays a small template (monochrome, system-tinted) icon. Clicking it opens a menu containing, in order:
 
-1. The nine grid positions, each as its own menu item. The currently selected position is shown with a checkmark; selecting a different one updates the persisted preference and immediately reapplies the move logic so any currently visible banner snaps to the new location.
+1. A "Rules…" menu item that opens the rule editor (see §22).
 2. A separator.
-3. A "send a test notification" action that posts a real notification through the standard user notification framework so the user can verify the move is working. The test notification's title is the application name; its subtitle is the currently selected position's display name; its body is a short fixed string. If permission to post user notifications has not yet been granted, the application requests it; if the user denies, the application shows an explanatory error and instructs the user how to enable notifications in System Settings.
+3. The nine grid positions, each as its own menu item. The currently selected position is shown with a checkmark; selecting a different one updates the persisted preference and immediately reapplies the move logic so any currently visible banner snaps to the new location.
 4. A separator.
-5. A "launch at login" toggle. This uses the modern login-item service and reflects three possible states: not registered, enabled, and "requires approval" (the last state arises when the system has not yet approved the registration, which happens on some systems). The menu item title and check state change to reflect the live status, which is re-read every time the menu is opened. If a toggle results in "requires approval," the application offers to open the relevant System Settings pane.
-6. A "hide menu bar icon" action that, after confirming with the user, removes the status item. The hidden state is persisted. The user is told (in the confirmation dialog) that relaunching the application will reveal the icon again — this works because the application listens for its own "became active" event and, if the icon is hidden, treats activation as a request to show it again and reset the preference.
-7. A separator.
-8. An "about" action that opens a small fixed-size, untitled-style window showing the application icon, name, version (from the bundle), maintainer line, and copyright (from the bundle). The window is non-resizable, closable, and disposed-of by hiding rather than destroying so re-opening is instantaneous.
-9. A "quit" action.
+5. A "send a test notification" action that posts a real notification through the standard user notification framework so the user can verify the move is working. The test notification's title is the application name; its subtitle is the currently selected position's display name; its body is a short fixed string. If permission to post user notifications has not yet been granted, the application requests it; if the user denies, the application shows an explanatory error and instructs the user how to enable notifications in System Settings.
+6. A separator.
+7. A "launch at login" toggle. This uses the modern login-item service and reflects three possible states: not registered, enabled, and "requires approval" (the last state arises when the system has not yet approved the registration, which happens on some systems). The menu item title and check state change to reflect the live status, which is re-read every time the menu is opened. If a toggle results in "requires approval," the application offers to open the relevant System Settings pane.
+8. A "hide menu bar icon" action that, after confirming with the user, removes the status item. The hidden state is persisted. The user is told (in the confirmation dialog) that relaunching the application will reveal the icon again — this works because the application listens for its own "became active" event and, if the icon is hidden, treats activation as a request to show it again and reset the preference.
+9. A separator.
+10. An "about" action that opens a small fixed-size, untitled-style window showing the application icon, name, version (from the bundle), maintainer line, and copyright (from the bundle). The window is non-resizable, closable, and disposed-of by hiding rather than destroying so re-opening is instantaneous.
+11. A "quit" action.
 
 The menu-bar icon's visibility is independent of the application's running state: hiding the icon does not stop the application, and the application can run perfectly well headless. This is intentional, because some users will set up BannerShift once and never want to see it again.
 
@@ -211,7 +232,7 @@ No other permissions are requested. No file access outside the user's `Library/L
 
 ## 17. Sandbox and Code Signing
 
-The application carries an entitlement file that grants only the accessibility entitlement. It is not sandboxed in the App Sandbox sense, because the accessibility API is not available to sandboxed apps. It is, however, distributable through the Developer ID program: the release build is signed with a Developer ID Application identity, hardened-runtime is enabled, and the resulting bundle is submitted to Apple's notarization service and stapled.
+The application carries an entitlement file used solely to explicitly opt out of Apple-events automation (`com.apple.security.automation.apple-events = false`). There is no code-signing entitlement for accessibility — that permission is granted by the user at runtime in System Settings → Privacy & Security → Accessibility (TCC), and is checked via `AXIsProcessTrustedWithOptions`. The application is not sandboxed in the App Sandbox sense, because the accessibility API is not available to sandboxed apps. It is, however, distributable through the Developer ID program: the release build is signed with a Developer ID Application identity, hardened-runtime is enabled, and the resulting bundle is submitted to Apple's notarization service and stapled.
 
 For development, a non-notarized ad-hoc-signed build is used; this build will not pass Gatekeeper and is intended only for the developer's own machine.
 

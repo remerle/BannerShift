@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>          <string>en</string>
+    <key>CFBundleExecutable</key>                 <string>BannerShift</string>
+    <key>CFBundleIdentifier</key>                 <string>com.emerle.BannerShift</string>
+    <key>CFBundleInfoDictionaryVersion</key>      <string>6.0</string>
+    <key>CFBundleName</key>                       <string>BannerShift</string>
+    <key>CFBundlePackageType</key>                <string>APPL</string>
+    <key>CFBundleShortVersionString</key>         <string>1.0.0</string>
+    <key>CFBundleVersion</key>                    <string>1</string>
+    <key>CFBundleIconFile</key>                   <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>             <string>13.0</string>
+    <key>LSUIElement</key>                        <true/>
+    <key>NSHumanReadableCopyright</key>           <string>Copyright © 2026 Ryan Emerle. All rights reserved.</string>
+    <!-- NSAccessibilityUsageDescription is informational only. macOS does not display a per-app purpose string for Accessibility access; the system prompt and the System Settings > Privacy & Security > Accessibility row are populated from CFBundleName and the bundle icon. The key is retained as a developer-facing record of intent. -->
+    <key>NSAccessibilityUsageDescription</key>    <string>BannerShift uses Accessibility to observe the system's notification banner windows and move them to your chosen screen position. Banner text (app name, title, subtitle, body) is read only in memory to evaluate the matching rules you configure, stays on your Mac, and is never written to disk unless you enable debug logging.</string>
+    <key>NSPrincipalClass</key>                   <string>NSApplication</string>
+</dict>
+</plist>

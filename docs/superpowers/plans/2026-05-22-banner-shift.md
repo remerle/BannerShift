@@ -962,12 +962,15 @@ private let bannerFrame = CGRect(x: 1544, y: 0, width: 360, height: 80)
     //    the banner does not collide with the Dock."
     // So middle: shift up by dockPadding/2 to bias above center.
     let origin = calc.targetOrigin(for: .middle)
-    // We document a specific contract: middle = vertical center of visible
-    // area, minus half the dock padding so a bottom Dock can't clip it.
-    // visibleCenter AX = (visible_top_ax + visible_bottom_ax) / 2 = (0 + 1055) / 2 = 527.5
-    // bannerCenter_in_window = (0 + 80) / 2 = 40.
-    // target window y = 527.5 - 40 - dockPadding/2 = 527.5 - 40 - 15 = 472.5 → 473
-    #expect(origin.x == 0)
+    // Horizontal: Position.middle has .center horizontal, so the banner is
+    // horizontally centered on the display (same derivation as topMiddle):
+    //   centered_x = (1920 - 360) / 2 = 780;  target_x = 780 - 1544 = -764.
+    // Vertical: middle = vertical center of visible area, minus half the
+    // dock padding so a bottom Dock can't clip it.
+    //   visibleCenterAX = (0 + 1055) / 2 = 527.5
+    //   bannerCenterInWindow = (0 + 80) / 2 = 40
+    //   target_y = 527.5 - 40 - dockPadding/2 = 527.5 - 40 - 15 = 472.5 → 473
+    #expect(origin.x == -764)
     #expect(origin.y == 473)
 }
 
@@ -1001,11 +1004,44 @@ private let bannerFrame = CGRect(x: 1544, y: 0, width: 360, height: 80)
     )
     #expect(calc.invariantHolds == true)
 }
+
+@Test func targetOriginIsAlwaysIntegerForAllPositionsAndScreens() {
+    // Image-fidelity guard (plan §7.1): every emitted target origin must
+    // have integer x and y so the banner renders crisp at any DPI. Sweep
+    // every position across several screen geometries and banner offsets
+    // that would otherwise yield fractional centers.
+    let screens: [ScreenInfo] = [
+        ScreenInfo(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                   visibleFrame: CGRect(x: 0, y: 25, width: 1920, height: 1055), isPrimary: true),
+        ScreenInfo(frame: CGRect(x: 0, y: 0, width: 1366, height: 768),
+                   visibleFrame: CGRect(x: 0, y: 25, width: 1366, height: 670), isPrimary: true),
+        ScreenInfo(frame: CGRect(x: 0, y: 0, width: 2560, height: 1600),
+                   visibleFrame: CGRect(x: 0, y: 25, width: 2560, height: 1497), isPrimary: true),
+    ]
+    let banners: [CGRect] = [
+        CGRect(x: 1544, y: 0, width: 360, height: 80),
+        CGRect(x: 1545, y: 1, width: 361, height: 81),   // odd dimensions
+        CGRect(x: 990,  y: 7, width: 355, height: 79),   // fractional center
+    ]
+    for s in screens {
+        let window = CGRect(x: 0, y: 0, width: s.frame.width, height: s.frame.height)
+        for b in banners {
+            let calc = PositionCalculator(windowFrame: window, bannerFrame: b, screen: s)
+            for p in Position.allCases {
+                let o = calc.targetOrigin(for: p)
+                #expect(o.x == o.x.rounded(),
+                        "non-integer x for \(p.rawValue) on \(s.frame.size) with banner \(b.size)")
+                #expect(o.y == o.y.rounded(),
+                        "non-integer y for \(p.rawValue) on \(s.frame.size) with banner \(b.size)")
+            }
+        }
+    }
+}
 ```
 
 - [ ] **Step 2: Run, see failures**
 
-Run: `swift test`
+Run: `make test`
 Expected: "cannot find 'PositionCalculator' in scope".
 
 - [ ] **Step 3: Implement `PositionCalculator.swift`**
@@ -2047,6 +2083,31 @@ private let to   = CGPoint(x: 100, y: 50)
     let ys = Set(frames.map(\.point.y))
     #expect(ys.count == 1)
     #expect(xs.count > 1)
+}
+
+@Test func everyFrameLandsOnIntegerPoints() {
+    // Image-fidelity guard (plan §7.1): every animation frame must emit
+    // an integer-point target so the banner renders crisp throughout the
+    // animation, not just at the final settle position. Sweep all styles
+    // with off-axis from/to so the sine envelope and ease curve hit
+    // fractional intermediates pre-rounding.
+    let fromVariants: [CGPoint] = [.zero, CGPoint(x: 0.5, y: 0.5), CGPoint(x: 13, y: 27)]
+    let toVariants:   [CGPoint] = [CGPoint(x: 100, y: 50),
+                                   CGPoint(x: 333, y: 167),
+                                   CGPoint(x: -55, y: 240)]
+    for style in Animation.allCases {
+        for from in fromVariants {
+            for to in toVariants {
+                let frames = AnimationFrames.frames(style: style, from: from, to: to)
+                for (i, f) in frames.enumerated() {
+                    #expect(f.point.x == f.point.x.rounded(),
+                            "non-integer x at frame \(i) for \(style.rawValue) from=\(from) to=\(to)")
+                    #expect(f.point.y == f.point.y.rounded(),
+                            "non-integer y at frame \(i) for \(style.rawValue) from=\(from) to=\(to)")
+                }
+            }
+        }
+    }
 }
 ```
 
@@ -4476,6 +4537,22 @@ For each of the nine positions:
 
 If a row's vertical position is off, suspect §7 math or the banner-subrole set (§20.1).
 If horizontal is off, suspect `bannerRightInset` or the banner subroles.
+
+- [ ] **Step 3a: Image-fidelity check (plan §7.1)**
+
+For each of the four animation styles (`none`, `slide`, `shake`, `bounce`):
+
+1. Create a rule (via the editor) with that animation applied to a catchall (no patterns set).
+2. Send a test notification.
+3. Once the banner has settled, lean in and check the text: is every letter crisp, or do you see fuzzy edges / half-pixel doubling? Banner text on a Retina display should be pixel-perfect.
+4. During the animation portion (before settle), watch for stutter or sub-pixel ghosting on the moving banner. A clean motion blur from the OS compositor is fine; persistent fuzzy edges after settle is not.
+
+If any style produces blurry settled text, check that:
+- `PositionCalculator.targetOrigin` is returning integer points (the automated test in Task 8 should catch this, but verify).
+- `AnimationFrames.frames` last frame is exactly the target (not a fractional approach to it) — the test in Task 11D covers this.
+- No code path is bypassing the rounding (e.g., a refactor that dropped `.rounded()`).
+
+If stutter is visible during the animation (and not pixel-related), the issue is more likely AX-write contention with the OS's compositor; this is harder to fix and may need to be accepted as a known visual limitation. Document in a follow-up issue.
 
 - [ ] **Step 4: Notification Center panel test**
 

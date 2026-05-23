@@ -1,1 +1,19 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+DerivedData/
+build/
+*.app
+*.tar.gz
+.env
+.secrets/
 .DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Code signing artifacts — credentials, never commit
+*.p12
+*.cer
+*.p8
