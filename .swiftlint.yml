@@ -1,0 +1,143 @@
+# SwiftLint config for BannerShift.
+# Rules are tuned to complement swift-format (which handles whitespace,
+# indentation, brace position, line length, etc), so this file focuses on
+# semantic and idiomatic concerns rather than whitespace.
+
+# What to look at.
+included:
+  - Sources
+  - Tests
+excluded:
+  - .build
+  - build
+  - docs
+
+# Disable rules that conflict with or duplicate swift-format.
+disabled_rules:
+  - line_length            # swift-format owns line wrapping
+  - opening_brace          # swift-format owns brace placement
+  - trailing_whitespace    # swift-format strips it
+  - trailing_newline       # swift-format enforces final newline
+  - statement_position     # swift-format owns `else`/`catch` placement
+  - todo                   # we keep TODO/FIXME on purpose; reviewer flags them
+
+# Opt-in rules worth enabling.
+opt_in_rules:
+  # Idioms, redundancy, dead syntax.
+  - empty_count
+  - empty_string
+  - explicit_init
+  - first_where
+  - last_where
+  - sorted_first_last
+  - toggle_bool
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+  - flatmap_over_map_reduce
+  - reduce_into
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - unused_optional_binding
+  - prohibited_super_call
+  - fatal_error_message
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - overridden_super_call
+  - prefer_self_in_static_references
+  - prefer_zero_over_explicit_init
+  - private_action
+  - private_outlet
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - yoda_condition
+  # Documentation enforcement.
+  - missing_docs
+  # Safety / correctness.
+  - array_init
+  - discouraged_optional_boolean
+  - discouraged_optional_collection
+  - weak_delegate
+  - legacy_objc_type
+  - raw_value_for_camel_cased_codable_enum
+  - prohibited_interface_builder
+  # Style and consistency.
+  - modifier_order
+  - no_extension_access_modifier
+  - optional_enum_case_matching
+  - pattern_matching_keywords
+  - prefer_self_type_over_type_of_self
+  - sorted_imports
+  - strict_fileprivate
+  - syntactic_sugar
+  - unused_capture_list
+  - vertical_whitespace_between_cases
+  - expiring_todo
+
+# Slow rules that need SourceKit / a compile log. Run via `make analyze`.
+analyzer_rules:
+  - unused_declaration
+  - unused_import
+
+# Require doc comments on public and open declarations. Extensions and
+# inherited overrides are excluded because their owning type / parent already
+# has the documentation.
+missing_docs:
+  warning:
+    - open
+    - public
+  excludes_extensions: true
+  excludes_inherited_types: true
+  excludes_trivial_init: true
+
+# TODOs must carry an expiration date so they don't rot.
+expiring_todo:
+  date_format: "yyyy-MM-dd"
+  approaching_expiry_severity: warning
+  expired_severity: error
+  bad_formatting_severity: warning
+
+# Rule-specific knobs.
+identifier_name:
+  min_length: 2          # allow `id`, `pi`, `x`, `y` (geometry vars)
+  excluded:
+    - id
+    - x
+    - y
+    - dx
+    - dy
+    - to
+    - in
+    - on
+
+type_name:
+  min_length: 3
+  max_length:
+    warning: 50
+    error: 60
+
+function_body_length:
+  warning: 60
+  error: 100
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 500
+  error: 800
+  ignore_comment_only_lines: true
+
+cyclomatic_complexity:
+  warning: 12
+  error: 20
+
+nesting:
+  type_level: 2
+  function_level: 3
+
+# Reporter format. CLI default is fine; CI gets clean output.
+reporter: "xcode"

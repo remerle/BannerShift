@@ -42,12 +42,20 @@ run: dev ## Build then launch the .app via `open`.
 format: ## Format Swift sources in place (Apple swift-format).
 	$(SWIFT_FMT) format -i -r $(SOURCES)
 
-.PHONY: format-check
-format-check: ## Verify formatting; nonzero exit on drift.
+.PHONY: lint
+lint: ## Lint sources: swift-format (formatting) + SwiftLint (semantic rules). Nonzero exit on any drift or violation.
 	$(SWIFT_FMT) lint -s -r $(SOURCES)
+	swift package --disable-sandbox plugin --allow-writing-to-package-directory swiftlint lint --strict --quiet
+
+.PHONY: analyze
+analyze: ## Slow: SwiftLint analyzer rules (unused_declaration, unused_import). Requires full Xcode for SourceKit. Not in `validate`.
+	swift package --disable-sandbox plugin --allow-writing-to-package-directory swiftlint analyze --strict --quiet
+
+.PHONY: format-check
+format-check: lint ## (alias) Same as `make lint`; kept for muscle memory.
 
 .PHONY: validate
-validate: format-check build test ## Pre-merge gate: format-check + build + test.
+validate: lint build test ## Pre-merge gate: lint + build + test. (analyze is separate.)
 	@echo "validate: all checks ok"
 
 # ---- Release ----

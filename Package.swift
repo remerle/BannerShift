@@ -14,7 +14,11 @@ let package = Package(
     .library(name: "BannerShiftCore", targets: ["BannerShiftCore"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/swiftlang/swift-testing.git", from: "0.10.0")
+    .package(url: "https://github.com/swiftlang/swift-testing.git", from: "0.10.0"),
+    // SwiftLint command plugin. Invoke via `swift package plugin swiftlint` or
+    // through the Makefile `lint` target. Build-tool plugin is intentionally
+    // not attached to targets so the inner-loop `swift build` stays fast.
+    .package(url: "https://github.com/realm/SwiftLint.git", from: "0.55.0"),
   ],
   targets: [
     .target(name: "BannerShiftCore"),
