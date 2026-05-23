@@ -4,24 +4,24 @@ import Testing
 @testable import BannerShiftCore
 
 @Test func identicalKeysAreEqual() {
-  let a = ObserverKey(
+  let lhs = ObserverKey(
     elementID: 0x1000, role: "AXWindow", subrole: "AXSystemDialog",
     size: CGSize(width: 1920, height: 1080))
-  let b = ObserverKey(
+  let rhs = ObserverKey(
     elementID: 0x1000, role: "AXWindow", subrole: "AXSystemDialog",
     size: CGSize(width: 1920, height: 1080))
-  #expect(a == b)
-  #expect(a.hashValue == b.hashValue)
+  #expect(lhs == rhs)
+  #expect(lhs.hashValue == rhs.hashValue)
 }
 
 @Test func differentElementIDsDoNotCollide() {
-  let a = ObserverKey(
+  let lhs = ObserverKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  let b = ObserverKey(
+  let rhs = ObserverKey(
     elementID: 0x2000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  #expect(a != b)
+  #expect(lhs != rhs)
 }
 
 @Test func sameShapeDifferentElementIDsStayDistinct() {
@@ -43,11 +43,11 @@ import Testing
   // Position changes every time we move a window — must not affect identity.
   // (Two keys built with the same elementID/role/subrole/size are equal regardless of where
   // the window is on screen because position is not part of the key.)
-  let a = ObserverKey(
+  let lhs = ObserverKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  let b = ObserverKey(
+  let rhs = ObserverKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  #expect(a == b)
+  #expect(lhs == rhs)
 }

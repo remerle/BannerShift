@@ -4,15 +4,20 @@ import CoreGraphics
 import Foundation
 
 final class Animator {
-  /// Default delay before the animation starts, in seconds. Tuned to wait
-  /// out the OS's own banner-entry animation so our motion begins from a
-  /// settled banner rather than fighting the system animation.
+  /// Default delay before the animation starts, in seconds.
+  ///
+  /// Tuned to wait out the OS's own banner-entry animation so our
+  /// motion begins from a settled banner rather than fighting the
+  /// system animation.
   static let startDelay: TimeInterval = 0.150
 
   private var workItems: [UInt64: [DispatchWorkItem]] = [:]
 
-  /// Schedule `frames` on the main queue against `window`. Cancels any
-  /// previously scheduled animation for `windowID`.
+  /// Schedule `frames` on the main queue against `window`.
+  ///
+  /// Cancels any previously scheduled animation for `windowID` so a
+  /// rapid sequence of repositions never produces overlapping writes
+  /// to the same window's AX position attribute.
   func animate(
     windowID: UInt64,
     window: AXUIElement,
@@ -24,7 +29,7 @@ final class Animator {
     let start = DispatchTime.now() + delay
     for frame in frames {
       let item = DispatchWorkItem {
-        Animator.set(point: frame.point, on: window)
+        Self.set(point: frame.point, on: window)
       }
       DispatchQueue.main.asyncAfter(deadline: start + frame.timeOffset, execute: item)
       items.append(item)
@@ -53,8 +58,8 @@ final class Animator {
   }
 
   static func set(point: CGPoint, on window: AXUIElement) {
-    var p = point
-    guard let v = AXValueCreate(.cgPoint, &p) else { return }
-    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, v)
+    var mutablePoint = point
+    guard let axValue = AXValueCreate(.cgPoint, &mutablePoint) else { return }
+    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, axValue)
   }
 }

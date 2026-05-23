@@ -17,9 +17,18 @@ import Foundation
 /// - At construction, if the file exceeds `Constants.maxLogFileSize` it is
 ///   truncated.
 public final class FileLogger {
+  /// Severity tag emitted at the start of each log line.
   public enum Level: String {
+    /// Routine operational event (launch, AX events, rule load count).
     case info = "INFO"
+
+    /// Verbose diagnostic, including notification content. Gated by the
+    /// debug-logging preference at write time so the default install
+    /// never spills notification text to disk.
     case debug = "DEBUG"
+
+    /// Recoverable failure the user might need to act on (AX denied,
+    /// malformed rule pattern, log-file write failure).
     case error = "ERROR"
   }
 
@@ -28,15 +37,22 @@ public final class FileLogger {
   private let isDebugEnabled: () -> Bool
   private let formatter: ISO8601DateFormatter
   private let queue = DispatchQueue(label: "BannerShift.FileLogger")
-  /// Set to `true` inside `close()` under the `queue.sync` barrier. Read only
-  /// inside the serial-queue closure in `write(_:_:)`, so no further
-  /// synchronization is needed.
+  /// Set to `true` inside `close()` under the `queue.sync` barrier.
+  ///
+  /// Read only inside the serial-queue closure in `write(_:_:)`, so no
+  /// further synchronization is needed.
   private var closed = false
 
   /// - Parameters:
-  ///   - url: Destination log file. Parent directory is created if missing.
-  ///   - isDebugEnabled: Live check evaluated on every `debug(_:)` call so
-  ///     the debug flag can be flipped at runtime.
+  ///   - url: Destination log file. Parent directory is created if
+  ///     missing; the file is created with mode 0600 on first launch
+  ///     and re-asserted to 0600 on subsequent launches.
+  ///   - isDebugEnabled: Live check evaluated on every `debug(_:)` call
+  ///     so the debug flag can be flipped at runtime.
+  /// - Throws: Rethrows directory-creation, file-removal, or
+  ///   file-handle errors from `FileManager`/`FileHandle`. Callers
+  ///   should treat any throw as fatal (the app cannot run without a
+  ///   working log) and terminate.
   public init(url: URL, isDebugEnabled: @escaping () -> Bool) throws {
     self.url = url
     self.isDebugEnabled = isDebugEnabled
@@ -59,10 +75,10 @@ public final class FileLogger {
     if !fm.fileExists(atPath: url.path) {
       fm.createFile(
         atPath: url.path, contents: nil,
-        attributes: [.posixPermissions: NSNumber(value: 0o600)])
+        attributes: [.posixPermissions: 0o600])
     } else {
       try? fm.setAttributes(
-        [.posixPermissions: NSNumber(value: 0o600)], ofItemAtPath: url.path)
+        [.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     self.handle = try FileHandle(forWritingTo: url)
@@ -81,9 +97,11 @@ public final class FileLogger {
     write(.debug, message)
   }
 
-  /// Drain pending writes and close the file handle. Safe to call once.
-  /// After this returns, subsequent `info`/`debug`/`error` calls are an
-  /// explicit no-op (rather than a silent failed write to a closed handle).
+  /// Drain pending writes and close the file handle.
+  ///
+  /// Safe to call once. After this returns, subsequent
+  /// `info`/`debug`/`error` calls are an explicit no-op (rather than a
+  /// silent failed write to a closed handle).
   public func close() {
     queue.sync {
       self.closed = true

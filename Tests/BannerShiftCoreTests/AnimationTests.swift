@@ -22,9 +22,9 @@ import Testing
 }
 
 @Test func animationCodableRoundTrip() throws {
-  for a in Animation.allCases {
-    let data = try JSONEncoder().encode(a)
+  for animation in Animation.allCases {
+    let data = try JSONEncoder().encode(animation)
     let decoded = try JSONDecoder().decode(Animation.self, from: data)
-    #expect(decoded == a)
+    #expect(decoded == animation)
   }
 }

@@ -8,8 +8,9 @@ enum NotificationCenterPanelDetector {
     {
       return true
     }
-    for child in AXBannerFinder.arrayAttribute(window, kAXChildrenAttribute as CFString) {
-      if isPanel(child) { return true }
+    for child in AXBannerFinder.arrayAttribute(window, kAXChildrenAttribute as CFString)
+    where isPanel(child) {
+      return true
     }
     return false
   }

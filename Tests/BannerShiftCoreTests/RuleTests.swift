@@ -4,30 +4,30 @@ import Testing
 @testable import BannerShiftCore
 
 @Test func bannerTextEmptyDefaults() {
-  let t = BannerText()
-  #expect(t.appName == "")
-  #expect(t.title == "")
-  #expect(t.body == "")
-  #expect(t.bundleID == nil)
+  let banner = BannerText()
+  #expect(banner.appName.isEmpty)
+  #expect(banner.title.isEmpty)
+  #expect(banner.body.isEmpty)
+  #expect(banner.bundleID == nil)
 }
 
 @Test func bannerTextEquatable() {
-  let a = BannerText(appName: "A", title: "T")
-  let b = BannerText(appName: "A", title: "T")
-  #expect(a == b)
+  let left = BannerText(appName: "A", title: "T")
+  let right = BannerText(appName: "A", title: "T")
+  #expect(left == right)
 }
 
 @Test func ruleInitDefaults() {
-  let r = Rule()
-  #expect(!r.id.isEmpty)
-  #expect(r.enabled == true)
-  #expect(r.position == nil)
-  #expect(r.animation == nil)
-  #expect(r.appPattern == nil)
+  let rule = Rule()
+  #expect(!rule.id.isEmpty)
+  #expect(rule.enabled == true)
+  #expect(rule.position == nil)
+  #expect(rule.animation == nil)
+  #expect(rule.appPattern == nil)
 }
 
 @Test func ruleCodableRoundTrip() throws {
-  let r = Rule(
+  let rule = Rule(
     id: "1234",
     name: "Slack DMs",
     enabled: true,
@@ -36,14 +36,14 @@ import Testing
     position: .middle,
     animation: .shake
   )
-  let data = try JSONEncoder().encode(r)
+  let data = try JSONEncoder().encode(rule)
   let back = try JSONDecoder().decode(Rule.self, from: data)
-  #expect(back == r)
+  #expect(back == rule)
 }
 
 @Test func ruleCodableHandlesNilFields() throws {
-  let r = Rule(name: "Catchall")
-  let data = try JSONEncoder().encode(r)
+  let rule = Rule(name: "Catchall")
+  let data = try JSONEncoder().encode(rule)
   let back = try JSONDecoder().decode(Rule.self, from: data)
-  #expect(back == r)
+  #expect(back == rule)
 }

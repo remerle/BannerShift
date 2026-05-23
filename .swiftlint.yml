@@ -72,7 +72,6 @@ opt_in_rules:
   - sorted_imports
   - strict_fileprivate
   - syntactic_sugar
-  - unused_capture_list
   - vertical_whitespace_between_cases
   - expiring_todo
 
@@ -123,8 +122,12 @@ function_body_length:
   error: 100
 
 type_body_length:
-  warning: 300
-  error: 500
+  # AppKit form controllers (e.g. RuleEditorWindowController) naturally
+  # exceed 300 because they own layout, table data source, delegate,
+  # and form-state methods. 400 keeps the rule useful for non-form code
+  # without forcing pointless extension-splitting of AppKit controllers.
+  warning: 400
+  error: 600
 
 file_length:
   warning: 500
@@ -138,6 +141,12 @@ cyclomatic_complexity:
 nesting:
   type_level: 2
   function_level: 3
+
+# Match swift-format's behavior: multi-line collection literals carry
+# a trailing comma after the final element. swift-format adds these
+# automatically; SwiftLint's default would strip them.
+trailing_comma:
+  mandatory_comma: true
 
 # Reporter format. CLI default is fine; CI gets clean output.
 reporter: "xcode"

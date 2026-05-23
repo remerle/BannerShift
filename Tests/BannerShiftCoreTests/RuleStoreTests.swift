@@ -3,20 +3,23 @@ import Testing
 
 @testable import BannerShiftCore
 
-private func makeSuite() -> UserDefaults {
+private func makeSuite() throws -> UserDefaults {
   let name = "test-\(UUID().uuidString)"
-  let suite = UserDefaults(suiteName: name)!
+  // `UserDefaults(suiteName:)` returns nil only for reserved names; our
+  // names are UUID-derived, so this should never fail. `#require`
+  // surfaces the failure as a clean test issue if it ever does.
+  let suite = try #require(UserDefaults(suiteName: name))
   suite.removePersistentDomain(forName: name)
   return suite
 }
 
-@Test func ruleStoreEmptyByDefault() {
-  let store = RuleStore(defaults: makeSuite())
+@Test func ruleStoreEmptyByDefault() throws {
+  let store = RuleStore(defaults: try makeSuite())
   #expect(store.load() == [])
 }
 
-@Test func ruleStoreSaveLoadRoundTripPreservesOrder() {
-  let suite = makeSuite()
+@Test func ruleStoreSaveLoadRoundTripPreservesOrder() throws {
+  let suite = try makeSuite()
   let store = RuleStore(defaults: suite)
   let rules = [
     Rule(name: "A", appPattern: "Slack", position: .middle),
@@ -28,8 +31,8 @@ private func makeSuite() -> UserDefaults {
   #expect(back.map(\.name) == ["A", "B"])
 }
 
-@Test func ruleStoreReturnsEmptyOnCorruptJSON() {
-  let suite = makeSuite()
+@Test func ruleStoreReturnsEmptyOnCorruptJSON() throws {
+  let suite = try makeSuite()
   suite.set(Data("not json".utf8), forKey: RuleStore.key)
   var logged: [String] = []
   let store = RuleStore(defaults: suite, logger: { logged.append($0) })
@@ -37,13 +40,12 @@ private func makeSuite() -> UserDefaults {
   #expect(!logged.isEmpty)
 }
 
-@Test func ruleStoreLoadIsCachedAcrossCalls() {
-  // perf-001 / quality-012: load() decodes once and caches the result.
-  // Verify by mutating the backing UserDefaults blob after the first
-  // load: a non-cached implementation would surface the new contents
-  // on the next load; the cached implementation must return the
-  // previously decoded value.
-  let suite = makeSuite()
+@Test func ruleStoreLoadIsCachedAcrossCalls() throws {
+  // load() decodes once and caches the result. Verify by mutating the
+  // backing UserDefaults blob after the first load: a non-cached
+  // implementation would surface the new contents on the next load;
+  // the cached implementation must return the previously decoded value.
+  let suite = try makeSuite()
   let store = RuleStore(defaults: suite)
   let initial = [
     Rule(name: "A", appPattern: "Slack", position: .middle)
@@ -60,7 +62,7 @@ private func makeSuite() -> UserDefaults {
     Rule(name: "Hijacked", appPattern: "X", position: .topLeft),
     Rule(name: "Also", appPattern: "Y", position: .topRight),
   ]
-  let mutatedBlob = try! JSONEncoder().encode(usurper)
+  let mutatedBlob = try JSONEncoder().encode(usurper)
   suite.set(mutatedBlob, forKey: RuleStore.key)
 
   let second = store.load()
@@ -68,10 +70,10 @@ private func makeSuite() -> UserDefaults {
   #expect(second.map(\.name) == ["A"])
 }
 
-@Test func ruleStoreSaveUpdatesCache() {
+@Test func ruleStoreSaveUpdatesCache() throws {
   // Save must refresh the cache so a subsequent load() reflects the
   // newly persisted rules without re-decoding from defaults.
-  let suite = makeSuite()
+  let suite = try makeSuite()
   let store = RuleStore(defaults: suite)
   store.save([Rule(name: "First")])
   _ = store.load()  // prime the cache

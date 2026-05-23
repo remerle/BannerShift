@@ -3,7 +3,7 @@ import Testing
 
 @testable import BannerShiftCore
 
-private let from = CGPoint(x: 0, y: 0)
+private let from = CGPoint.zero
 private let to = CGPoint(x: 100, y: 50)
 
 @Test func noneProducesOneFrameAtTarget() {
@@ -13,11 +13,13 @@ private let to = CGPoint(x: 100, y: 50)
   #expect(frames[0].timeOffset == 0)
 }
 
-@Test func slideStartsFromAndEndsAtTarget() {
+@Test func slideStartsFromAndEndsAtTarget() throws {
   let frames = AnimationFrames.frames(style: .slide, from: from, to: to)
-  #expect(frames.first!.point == from)
-  #expect(frames.last!.point == to)
-  #expect(frames.first!.timeOffset == 0)
+  let first = try #require(frames.first)
+  let last = try #require(frames.last)
+  #expect(first.point == from)
+  #expect(last.point == to)
+  #expect(first.timeOffset == 0)
 }
 
 @Test func slideFrameCountTracksFps() {
@@ -32,10 +34,12 @@ private let to = CGPoint(x: 100, y: 50)
   #expect(ts == ts.sorted())
 }
 
-@Test func shakeStartsAndEndsAtCenter() {
+@Test func shakeStartsAndEndsAtCenter() throws {
   let frames = AnimationFrames.frames(style: .shake, from: from, to: to)
-  #expect(frames.first!.point == to)
-  #expect(frames.last!.point == to)
+  let first = try #require(frames.first)
+  let last = try #require(frames.last)
+  #expect(first.point == to)
+  #expect(last.point == to)
 }
 
 @Test func bounceVariesYNotX() {
@@ -67,16 +71,17 @@ private let to = CGPoint(x: 100, y: 50)
     CGPoint(x: -55, y: 240),
   ]
   for style in Animation.allCases {
-    for fromP in fromVariants {
-      for toP in toVariants {
-        let frames = AnimationFrames.frames(style: style, from: fromP, to: toP)
-        for (i, f) in frames.enumerated() {
+    for fromPoint in fromVariants {
+      for toPoint in toVariants {
+        let frames = AnimationFrames.frames(style: style, from: fromPoint, to: toPoint)
+        for (index, frame) in frames.enumerated() {
+          let context = "frame \(index) for \(style.rawValue) from=\(fromPoint) to=\(toPoint)"
           #expect(
-            f.point.x == f.point.x.rounded(),
-            "non-integer x at frame \(i) for \(style.rawValue) from=\(fromP) to=\(toP)")
+            frame.point.x == frame.point.x.rounded(),
+            "non-integer x at \(context)")
           #expect(
-            f.point.y == f.point.y.rounded(),
-            "non-integer y at frame \(i) for \(style.rawValue) from=\(fromP) to=\(toP)")
+            frame.point.y == frame.point.y.rounded(),
+            "non-integer y at \(context)")
         }
       }
     }

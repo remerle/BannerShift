@@ -111,17 +111,23 @@ final class RuleEditorWindowController: NSWindowController {
     ])
   }
 
+  private struct ColumnSpec {
+    let id: String
+    let title: String
+    let width: CGFloat
+  }
+
   private func configureTable() {
-    let cols: [(String, String, CGFloat)] = [
-      ("on", "On", 40),
-      ("name", "Name", 140),
-      ("app", "App", 100),
-      ("rule", "Pos / Anim", 120),
+    let cols: [ColumnSpec] = [
+      ColumnSpec(id: "on", title: "On", width: 40),
+      ColumnSpec(id: "name", title: "Name", width: 140),
+      ColumnSpec(id: "app", title: "App", width: 100),
+      ColumnSpec(id: "rule", title: "Pos / Anim", width: 120),
     ]
-    for (id, title, w) in cols {
-      let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(id))
-      col.title = title
-      col.width = w
+    for spec in cols {
+      let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
+      col.title = spec.title
+      col.width = spec.width
       tableView.addTableColumn(col)
     }
     tableView.dataSource = self
@@ -147,25 +153,29 @@ final class RuleEditorWindowController: NSWindowController {
       err.font = .systemFont(ofSize: 10)
     }
     positionPopUp.addItem(withTitle: "(default)")
-    for p in Position.allCases { positionPopUp.addItem(withTitle: p.displayName) }
+    for position in Position.allCases {
+      positionPopUp.addItem(withTitle: position.displayName)
+    }
     positionPopUp.target = self
     positionPopUp.action = #selector(detailChanged)
 
     animationPopUp.addItem(withTitle: "(default)")
-    for a in Animation.allCases { animationPopUp.addItem(withTitle: a.displayName) }
+    for animation in Animation.allCases {
+      animationPopUp.addItem(withTitle: animation.displayName)
+    }
     animationPopUp.target = self
     animationPopUp.action = #selector(detailChanged)
 
     func row(_ label: String, _ control: NSView, _ err: NSView? = nil) -> NSStackView {
-      let l = NSTextField(labelWithString: label)
-      l.alignment = .right
-      l.widthAnchor.constraint(equalToConstant: 90).isActive = true
-      var subs: [NSView] = [l, control]
+      let labelView = NSTextField(labelWithString: label)
+      labelView.alignment = .right
+      labelView.widthAnchor.constraint(equalToConstant: 90).isActive = true
+      var subs: [NSView] = [labelView, control]
       if let err { subs.append(err) }
-      let r = NSStackView(views: subs)
-      r.orientation = .horizontal
-      r.spacing = 6
-      return r
+      let rowStack = NSStackView(views: subs)
+      rowStack.orientation = .horizontal
+      rowStack.spacing = 6
+      return rowStack
     }
 
     let stack = NSStackView(views: [
@@ -212,8 +222,9 @@ final class RuleEditorWindowController: NSWindowController {
 
   private func refreshTable() {
     tableView.reloadData()
-    if let i = selectedIndex, rules.indices.contains(i) {
-      tableView.selectRowIndexes(IndexSet(integer: i), byExtendingSelection: false)
+    if let index = selectedIndex, rules.indices.contains(index) {
+      tableView.selectRowIndexes(
+        IndexSet(integer: index), byExtendingSelection: false)
     }
   }
 
@@ -232,9 +243,9 @@ final class RuleEditorWindowController: NSWindowController {
   }
 
   @objc private func removeRule() {
-    guard let i = selectedIndex, rules.indices.contains(i) else { return }
-    rules.remove(at: i)
-    selectedIndex = rules.isEmpty ? nil : min(i, rules.count - 1)
+    guard let index = selectedIndex, rules.indices.contains(index) else { return }
+    rules.remove(at: index)
+    selectedIndex = rules.isEmpty ? nil : min(index, rules.count - 1)
     save()
     refreshTable()
     loadDetailForSelection()
@@ -243,15 +254,15 @@ final class RuleEditorWindowController: NSWindowController {
   // MARK: Detail load/save
 
   private func loadDetailForSelection() {
-    let r = selectedIndex.flatMap { rules.indices.contains($0) ? rules[$0] : nil }
-    let on = r != nil
-    for c in [
+    let rule = selectedIndex.flatMap { rules.indices.contains($0) ? rules[$0] : nil }
+    let enabled = rule != nil
+    for control in [
       nameField, enabledButton, appField, bundleField, titleField,
       subtitleField, bodyField, positionPopUp, animationPopUp,
     ] as [NSControl] {
-      c.isEnabled = on
+      control.isEnabled = enabled
     }
-    guard let r else {
+    guard let rule else {
       nameField.stringValue = ""
       enabledButton.state = .off
       for tf in [appField, bundleField, titleField, subtitleField, bodyField] {
@@ -262,44 +273,44 @@ final class RuleEditorWindowController: NSWindowController {
       clearValidation()
       return
     }
-    nameField.stringValue = r.name
-    enabledButton.state = r.enabled ? .on : .off
-    appField.stringValue = r.appPattern ?? ""
-    bundleField.stringValue = r.bundleIDPattern ?? ""
-    titleField.stringValue = r.titlePattern ?? ""
-    subtitleField.stringValue = r.subtitlePattern ?? ""
-    bodyField.stringValue = r.bodyPattern ?? ""
+    nameField.stringValue = rule.name
+    enabledButton.state = rule.enabled ? .on : .off
+    appField.stringValue = rule.appPattern ?? ""
+    bundleField.stringValue = rule.bundleIDPattern ?? ""
+    titleField.stringValue = rule.titlePattern ?? ""
+    subtitleField.stringValue = rule.subtitlePattern ?? ""
+    bodyField.stringValue = rule.bodyPattern ?? ""
     positionPopUp.selectItem(
-      at: r.position.flatMap { Position.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+      at: rule.position.flatMap { Position.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
     animationPopUp.selectItem(
-      at: r.animation.flatMap { Animation.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+      at: rule.animation.flatMap { Animation.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
     validateAll()
   }
 
   @objc private func detailChanged() {
-    guard let i = selectedIndex, rules.indices.contains(i) else { return }
-    var r = rules[i]
-    r.name = nameField.stringValue
-    r.enabled = enabledButton.state == .on
-    r.appPattern = nilIfEmpty(appField.stringValue)
-    r.bundleIDPattern = nilIfEmpty(bundleField.stringValue)
-    r.titlePattern = nilIfEmpty(titleField.stringValue)
-    r.subtitlePattern = nilIfEmpty(subtitleField.stringValue)
-    r.bodyPattern = nilIfEmpty(bodyField.stringValue)
-    let pi = positionPopUp.indexOfSelectedItem
-    r.position = pi == 0 ? nil : Position.allCases[pi - 1]
-    let ai = animationPopUp.indexOfSelectedItem
-    r.animation = ai == 0 ? nil : Animation.allCases[ai - 1]
-    rules[i] = r
+    guard let index = selectedIndex, rules.indices.contains(index) else { return }
+    var rule = rules[index]
+    rule.name = nameField.stringValue
+    rule.enabled = enabledButton.state == .on
+    rule.appPattern = nilIfEmpty(appField.stringValue)
+    rule.bundleIDPattern = nilIfEmpty(bundleField.stringValue)
+    rule.titlePattern = nilIfEmpty(titleField.stringValue)
+    rule.subtitlePattern = nilIfEmpty(subtitleField.stringValue)
+    rule.bodyPattern = nilIfEmpty(bodyField.stringValue)
+    let positionIndex = positionPopUp.indexOfSelectedItem
+    rule.position = positionIndex == 0 ? nil : Position.allCases[positionIndex - 1]
+    let animationIndex = animationPopUp.indexOfSelectedItem
+    rule.animation = animationIndex == 0 ? nil : Animation.allCases[animationIndex - 1]
+    rules[index] = rule
     save()
     validateAll()
     updateTestResult()
     tableView.reloadData(
-      forRowIndexes: IndexSet(integer: i),
+      forRowIndexes: IndexSet(integer: index),
       columnIndexes: IndexSet(integersIn: 0..<tableView.tableColumns.count))
   }
 
-  private func nilIfEmpty(_ s: String) -> String? { s.isEmpty ? nil : s }
+  private func nilIfEmpty(_ value: String) -> String? { value.isEmpty ? nil : value }
   private func save() { ruleStore.save(rules) }
 
   // MARK: Regex validation
@@ -314,14 +325,14 @@ final class RuleEditorWindowController: NSWindowController {
 
   private func validate(_ field: NSTextField, into err: NSTextField) {
     field.wantsLayer = true
-    let s = field.stringValue
-    if s.isEmpty {
+    let pattern = field.stringValue
+    if pattern.isEmpty {
       field.layer?.borderWidth = 0
       err.stringValue = ""
       return
     }
     do {
-      _ = try Regex(s)
+      _ = try Regex(pattern)
       field.layer?.borderWidth = 0
       err.stringValue = ""
     } catch {
@@ -332,19 +343,19 @@ final class RuleEditorWindowController: NSWindowController {
   }
 
   private func clearValidation() {
-    for (f, l) in [
+    for (field, label) in [
       (appField, appError), (bundleField, bundleError),
       (titleField, titleError), (subtitleField, subtitleError),
       (bodyField, bodyError),
     ] {
-      f.layer?.borderWidth = 0
-      l.stringValue = ""
+      field.layer?.borderWidth = 0
+      label.stringValue = ""
     }
   }
 
   // MARK: Sample tester
 
-  @objc fileprivate func updateTestResult() {
+  @objc private func updateTestResult() {
     let banner = BannerText(
       appName: sampleAppField.stringValue,
       title: sampleTitleField.stringValue,
@@ -366,8 +377,7 @@ final class RuleEditorWindowController: NSWindowController {
 extension RuleEditorWindowController: NSTableViewDataSource {
   func numberOfRows(in tableView: NSTableView) -> Int { rules.count }
 
-  func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting?
-  {
+  func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
     let item = NSPasteboardItem()
     item.setString("\(row)", forType: .string)
     return item
@@ -389,8 +399,8 @@ extension RuleEditorWindowController: NSTableViewDataSource {
     dropOperation: NSTableView.DropOperation
   ) -> Bool {
     guard let item = info.draggingPasteboard.pasteboardItems?.first,
-      let s = item.string(forType: .string),
-      let src = Int(s)
+      let payload = item.string(forType: .string),
+      let src = Int(payload)
     else { return false }
     let dst = src < row ? row - 1 : row
     let moved = rules.remove(at: src)
@@ -421,15 +431,17 @@ extension RuleEditorWindowController: NSTableViewDelegate {
       return btn
     case "name": return NSTextField(labelWithString: rule.name)
     case "app": return NSTextField(labelWithString: rule.appPattern ?? "(any)")
+
     case "rule":
       let pos = rule.position?.displayName ?? "default"
       let anim = rule.animation?.displayName ?? "default"
       return NSTextField(labelWithString: "\(pos) / \(anim)")
+
     default: return nil
     }
   }
 
-  @objc fileprivate func rowEnabledToggled(_ sender: NSButton) {
+  @objc private func rowEnabledToggled(_ sender: NSButton) {
     let row = sender.tag
     guard rules.indices.contains(row) else { return }
     rules[row].enabled = sender.state == .on

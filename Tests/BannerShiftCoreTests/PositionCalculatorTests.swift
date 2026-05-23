@@ -31,7 +31,7 @@ private func makeCalc(
 
 @Test func topRightLeavesOriginUntouched() {
   let origin = makeCalc().targetOrigin(for: .topRight)
-  #expect(origin == CGPoint(x: 0, y: 0))
+  #expect(origin == .zero)
 }
 
 @Test func topLeftShiftsWindowLeftByBannerOffset() {
@@ -119,19 +119,18 @@ private func makeCalc(
     CGRect(x: 1545, y: 1, width: 361, height: 81),
     CGRect(x: 990, y: 7, width: 355, height: 79),
   ]
-  for s in screens {
-    let window = CGRect(x: 0, y: 0, width: s.frame.width, height: s.frame.height)
-    for b in banners {
+  for screen in screens {
+    let window = CGRect(x: 0, y: 0, width: screen.frame.width, height: screen.frame.height)
+    for banner in banners {
       let calc = PositionCalculator(
-        windowFrame: window, bannerFrame: b, screen: s, primaryHeight: s.frame.height)
-      for p in Position.allCases {
-        let o = calc.targetOrigin(for: p)
-        #expect(
-          o.x == o.x.rounded(),
-          "non-integer x for \(p.rawValue) on \(s.frame.size) with banner \(b.size)")
-        #expect(
-          o.y == o.y.rounded(),
-          "non-integer y for \(p.rawValue) on \(s.frame.size) with banner \(b.size)")
+        windowFrame: window, bannerFrame: banner, screen: screen,
+        primaryHeight: screen.frame.height)
+      for position in Position.allCases {
+        let origin = calc.targetOrigin(for: position)
+        let context =
+          "\(position.rawValue) on \(screen.frame.size) with banner \(banner.size)"
+        #expect(origin.x == origin.x.rounded(), "non-integer x for \(context)")
+        #expect(origin.y == origin.y.rounded(), "non-integer y for \(context)")
       }
     }
   }
@@ -168,8 +167,9 @@ private func makeCalc(
   //   targetBannerBottomAX = 0 - dockPadding(30) = -30
   //   bannerBottomInWindow = 0 + 80              = 80
   //   window y = -30 - 80 = -110
-  let o = calc.targetOrigin(for: .bottomRight)
-  #expect(o.x == 0, "with .right column the AX window x is unchanged")
+  let origin = calc.targetOrigin(for: .bottomRight)
+  #expect(origin.x == 0, "with .right column the AX window x is unchanged")
   #expect(
-    o.y == -110, "bottom edge on the secondary must use the PRIMARY's height as the AX flip pivot")
+    origin.y == -110,
+    "bottom edge on the secondary must use the PRIMARY's height as the AX flip pivot")
 }

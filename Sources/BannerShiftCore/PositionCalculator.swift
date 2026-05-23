@@ -10,16 +10,34 @@ import CoreGraphics
 /// container window whose height equals the display's height; that invariant
 /// is checked by `invariantHolds` and any caller should bail when it fails.
 public struct PositionCalculator {
+  /// AX-space frame of the container window holding the banner.
+  ///
+  /// Read from `Baseline.windowFrame` so an in-flight animation cannot
+  /// feed back into the math.
   public let windowFrame: CGRect
+
+  /// AX-space frame of the banner element inside `windowFrame`.
+  ///
+  /// Also read from `Baseline` for the same reason: stability across
+  /// repeated passes against the same window.
   public let bannerFrame: CGRect
+
+  /// Snapshot of the display the banner should land on.
   public let screen: ScreenInfo
-  /// AppKit→AX y-flip pivot. Must be the *primary* display's height, not the
-  /// chosen display's height. Same-height monitor setups land on the correct
-  /// value either way; heterogeneous-height multi-monitor setups will mis-place
-  /// banners on the non-primary display if the chosen display's height is used
-  /// here.
+
+  /// AppKit→AX y-flip pivot.
+  ///
+  /// Must be the *primary* display's height, not the chosen display's
+  /// height. Same-height monitor setups land on the correct value
+  /// either way; heterogeneous-height multi-monitor setups will
+  /// mis-place banners on the non-primary display if the chosen
+  /// display's height is used here.
   public let primaryHeight: CGFloat
 
+  /// Captures the inputs needed by the position math.
+  ///
+  /// The calculator is a pure value; one is constructed per banner
+  /// per reposition pass.
   public init(
     windowFrame: CGRect,
     bannerFrame: CGRect,
@@ -32,15 +50,23 @@ public struct PositionCalculator {
     self.primaryHeight = primaryHeight
   }
 
-  /// True iff the AX container window is the full height of the display. This
-  /// is the invariant the rest of the math depends on; callers must check it
-  /// before trusting `targetOrigin(for:)`. Violations are typically caused by
-  /// a macOS update changing the notification UI's window layout.
+  /// True iff the AX container window is the full height of the
+  /// display.
+  ///
+  /// This is the invariant the rest of the math depends on; callers
+  /// must check it before trusting `targetOrigin(for:)`. Violations
+  /// are typically caused by a macOS update changing the notification
+  /// UI's window layout.
   public var invariantHolds: Bool {
     windowFrame.size.height == screen.frame.size.height
   }
 
-  /// Computes the integer-snapped target window origin for the given 3x3 cell.
+  /// Computes the integer-snapped target window origin (AX coordinates,
+  /// top-left origin) for the given 3x3 cell.
+  ///
+  /// - Parameter position: Which of the nine grid cells to anchor on.
+  /// - Returns: Window origin rounded to integer points so the banner
+  ///   renders crisply at any DPI.
   public func targetOrigin(for position: Position) -> CGPoint {
     let x = horizontalOrigin(for: position.horizontal)
     let y = verticalOrigin(for: position.vertical)
@@ -49,15 +75,17 @@ public struct PositionCalculator {
 
   // MARK: - Horizontal
 
-  private func horizontalOrigin(for h: Position.Horizontal) -> CGFloat {
-    switch h {
+  private func horizontalOrigin(for horizontal: Position.Horizontal) -> CGFloat {
+    switch horizontal {
     case .right:
       // OS already places the banner at the right edge; keep window origin as-is.
       return windowFrame.origin.x
+
     case .left:
       // Want banner left edge at screen.frame.minX. Banner sits at bannerFrame.minX
       // inside the window, so shift the window so that windowOriginX + bannerMinX = screenMinX.
       return screen.frame.minX - bannerFrame.minX
+
     case .center:
       // Centered banner left in screen space = screen.minX + (screen.width - banner.width)/2.
       let centeredBannerLeft =
@@ -78,17 +106,19 @@ public struct PositionCalculator {
     primaryHeight - screen.visibleFrame.minY
   }
 
-  private func verticalOrigin(for v: Position.Vertical) -> CGFloat {
-    switch v {
+  private func verticalOrigin(for vertical: Position.Vertical) -> CGFloat {
+    switch vertical {
     case .top:
       // OS already places the banner at the top; keep window origin as-is.
       return windowFrame.origin.y
+
     case .middle:
       // Center the banner vertically on the visible area, biased up by dockPadding/2
       // so the Dock's presence doesn't visually push the banner off-center.
       let bannerCenterInWindow = bannerFrame.minY + bannerFrame.height / 2
       let visibleCenterAX = (visibleTopAX + visibleBottomAX) / 2
       return visibleCenterAX - bannerCenterInWindow - Constants.dockPadding / 2
+
     case .bottom:
       // Pin the banner's bottom edge dockPadding above the visible-area bottom.
       let targetBannerBottomAX = visibleBottomAX - Constants.dockPadding

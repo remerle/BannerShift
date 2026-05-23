@@ -17,10 +17,11 @@ final class AboutWindowController {
 
     let frame = NSRect(x: 0, y: 0, width: 320, height: 220)
     let style: NSWindow.StyleMask = [.titled, .closable]
-    let w = NSWindow(contentRect: frame, styleMask: style, backing: .buffered, defer: false)
-    w.title = ""
-    w.isReleasedWhenClosed = false
-    w.center()
+    let aboutWindow = NSWindow(
+      contentRect: frame, styleMask: style, backing: .buffered, defer: false)
+    aboutWindow.title = ""
+    aboutWindow.isReleasedWhenClosed = false
+    aboutWindow.center()
 
     let stack = NSStackView()
     stack.orientation = .vertical
@@ -52,16 +53,16 @@ final class AboutWindowController {
       stack.centerXAnchor.constraint(equalTo: content.centerXAnchor),
       stack.centerYAnchor.constraint(equalTo: content.centerYAnchor),
     ])
-    w.contentView = content
-    window = w
-    w.makeKeyAndOrderFront(nil)
+    aboutWindow.contentView = content
+    window = aboutWindow
+    aboutWindow.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
 
   private func label(_ text: String, weight: NSFont.Weight, size: CGFloat) -> NSTextField {
-    let f = NSTextField(labelWithString: text)
-    f.font = NSFont.systemFont(ofSize: size, weight: weight)
-    f.alignment = .center
-    return f
+    let field = NSTextField(labelWithString: text)
+    field.font = NSFont.systemFont(ofSize: size, weight: weight)
+    field.alignment = .center
+    return field
   }
 }

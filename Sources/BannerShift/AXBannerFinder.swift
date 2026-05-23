@@ -47,12 +47,18 @@ enum AXBannerFinder {
       let raw,
       CFGetTypeID(raw) == AXValueGetTypeID()
     else { return nil }
-    let val = raw as! AXValue  // safe: CFTypeID checked above
-    var p = CGPoint.zero
+    // Reason: `as? AXValue` always succeeds for CF types (compiler
+    // confirms this), so CFGetTypeID is the only valid runtime check.
+    // The guard above verified the type ID, so the force cast is
+    // provably safe. This is the canonical AXValue extraction pattern.
+    // swift-format-ignore: NeverForceUnwrap
+    // swiftlint:disable:next force_cast
+    let val = raw as! AXValue
+    var point = CGPoint.zero
     guard AXValueGetType(val) == .cgPoint,
-      AXValueGetValue(val, .cgPoint, &p)
+      AXValueGetValue(val, .cgPoint, &point)
     else { return nil }
-    return p
+    return point
   }
 
   static func sizeAttribute(_ el: AXUIElement, _ attr: CFString) -> CGSize? {
@@ -61,11 +67,15 @@ enum AXBannerFinder {
       let raw,
       CFGetTypeID(raw) == AXValueGetTypeID()
     else { return nil }
-    let val = raw as! AXValue  // safe: CFTypeID checked above
-    var s = CGSize.zero
+    // Reason: see `pointAttribute` above. CFGetTypeID is the only
+    // runtime check that AXValue dispatch supports.
+    // swift-format-ignore: NeverForceUnwrap
+    // swiftlint:disable:next force_cast
+    let val = raw as! AXValue
+    var size = CGSize.zero
     guard AXValueGetType(val) == .cgSize,
-      AXValueGetValue(val, .cgSize, &s)
+      AXValueGetValue(val, .cgSize, &size)
     else { return nil }
-    return s
+    return size
   }
 }

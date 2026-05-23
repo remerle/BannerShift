@@ -10,14 +10,14 @@ private let matcher = RuleMatcher()
 
 @Test func ruleWithNoPatternsIsCatchall() {
   let catchall = Rule(name: "Catchall")
-  let m = matcher.match(rules: [catchall], banner: BannerText(appName: "Whatever"))
-  #expect(m?.rule.id == catchall.id)
+  let match = matcher.match(rules: [catchall], banner: BannerText(appName: "Whatever"))
+  #expect(match?.rule.id == catchall.id)
 }
 
 @Test func appPatternMatchesCaseInsensitively() {
   let rule = Rule(name: "Slack rule", appPattern: "slack")
-  let m = matcher.match(rules: [rule], banner: BannerText(appName: "Slack"))
-  #expect(m?.rule.id == rule.id)
+  let match = matcher.match(rules: [rule], banner: BannerText(appName: "Slack"))
+  #expect(match?.rule.id == rule.id)
 }
 
 @Test func allSetPatternsMustMatch() {
@@ -30,17 +30,18 @@ private let matcher = RuleMatcher()
 }
 
 @Test func firstMatchWins() {
-  let a = Rule(name: "A", appPattern: "Slack", position: .middle)
-  let b = Rule(name: "B", appPattern: "Slack", position: .topRight)
-  let m = matcher.match(rules: [a, b], banner: BannerText(appName: "Slack"))
-  #expect(m?.rule.id == a.id)
+  let firstRule = Rule(name: "A", appPattern: "Slack", position: .middle)
+  let secondRule = Rule(name: "B", appPattern: "Slack", position: .topRight)
+  let match = matcher.match(
+    rules: [firstRule, secondRule], banner: BannerText(appName: "Slack"))
+  #expect(match?.rule.id == firstRule.id)
 }
 
 @Test func disabledRuleSkipped() {
   let disabled = Rule(name: "Off", enabled: false, appPattern: "Slack", position: .topLeft)
   let live = Rule(name: "On", appPattern: "Slack", position: .middle)
-  let m = matcher.match(rules: [disabled, live], banner: BannerText(appName: "Slack"))
-  #expect(m?.rule.id == live.id)
+  let match = matcher.match(rules: [disabled, live], banner: BannerText(appName: "Slack"))
+  #expect(match?.rule.id == live.id)
 }
 
 @Test func malformedRegexDoesNotMatch() {
@@ -53,9 +54,9 @@ private let matcher = RuleMatcher()
   // emits a diagnostic and treats the containing rule as disabled so the
   // user has a trail to follow when an "obvious" rule stops matching.
   var diagnostics: [String] = []
-  let m = RuleMatcher(diagnosticLogger: { diagnostics.append($0) })
+  let isolatedMatcher = RuleMatcher(diagnosticLogger: { diagnostics.append($0) })
   let bad = Rule(name: "BrokenRule", appPattern: "[unterminated")
-  let result = m.match(rules: [bad], banner: BannerText(appName: "Slack"))
+  let result = isolatedMatcher.match(rules: [bad], banner: BannerText(appName: "Slack"))
   #expect(result == nil)
   #expect(diagnostics.count == 1)
   #expect(diagnostics.first?.contains("BrokenRule") == true)

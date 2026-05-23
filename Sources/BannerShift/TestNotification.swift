@@ -14,10 +14,13 @@ enum TestNotification {
               if granted { post(positionName: positionName) } else { showDeniedAlert() }
             }
           }
+
         case .authorized, .provisional, .ephemeral:
           post(positionName: positionName)
+
         case .denied:
           showDeniedAlert()
+
         @unknown default:
           showDeniedAlert()
         }

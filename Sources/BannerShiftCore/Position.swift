@@ -1,5 +1,12 @@
 import Foundation
 
+/// One of nine grid cells a banner can be repositioned to: a 3x3 grid
+/// of horizontal (left/center/right) and vertical (top/middle/bottom)
+/// anchors.
+///
+/// The raw `String` representation is persisted in `UserDefaults`, so
+/// adding a case is safe but renaming or removing one will silently
+/// reset existing users to the default position.
 public enum Position: String, CaseIterable, Sendable, Codable {
   case topLeft = "top-left"
   case topMiddle = "top-middle"
@@ -11,9 +18,14 @@ public enum Position: String, CaseIterable, Sendable, Codable {
   case bottomMiddle = "bottom-middle"
   case bottomRight = "bottom-right"
 
+  /// Horizontal anchor extracted from a `Position`.
   public enum Horizontal: Sendable { case left, center, right }
+
+  /// Vertical anchor extracted from a `Position`.
   public enum Vertical: Sendable { case top, middle, bottom }
 
+  /// Horizontal component, used by `PositionCalculator` to compute
+  /// the target window x.
   public var horizontal: Horizontal {
     switch self {
     case .topLeft, .middleLeft, .bottomLeft: return .left
@@ -22,6 +34,8 @@ public enum Position: String, CaseIterable, Sendable, Codable {
     }
   }
 
+  /// Vertical component, used by `PositionCalculator` to compute the
+  /// target window y.
   public var vertical: Vertical {
     switch self {
     case .topLeft, .topMiddle, .topRight: return .top
@@ -30,6 +44,7 @@ public enum Position: String, CaseIterable, Sendable, Codable {
     }
   }
 
+  /// Human-readable label for the menu bar position picker.
   public var displayName: String {
     switch self {
     case .topLeft: return "Top Left"

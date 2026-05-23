@@ -1,8 +1,22 @@
 import CoreGraphics
 
+/// Given an AX point and a list of displays, picks the display the
+/// point lies on (with a primary-screen fallback when nothing
+/// contains it).
+///
+/// AX coordinates use a top-left origin anchored at the primary
+/// display, while `NSScreen.frame` uses AppKit's bottom-left origin.
+/// The conversion is the only fiddly part of "which screen is this
+/// banner on"; isolating it here keeps the rest of the pipeline
+/// AX-coordinate-pure.
 public struct DisplaySelector {
+  /// Display snapshots considered for containment, in the same order
+  /// as `NSScreen.screens` (so index 0 is the primary).
   public let screens: [ScreenInfo]
 
+  /// Stores the snapshot for the duration of one reposition pass.
+  ///
+  /// Callers create a new selector per pass; it holds no mutable state.
   public init(screens: [ScreenInfo]) {
     self.screens = screens
   }

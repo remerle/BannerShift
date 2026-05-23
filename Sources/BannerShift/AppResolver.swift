@@ -6,7 +6,7 @@ enum AppResolver {
     guard !name.isEmpty else { return nil }
     let lower = name.lowercased()
     for app in NSWorkspace.shared.runningApplications {
-      if let n = app.localizedName?.lowercased(), n == lower {
+      if let appName = app.localizedName?.lowercased(), appName == lower {
         return app.bundleIdentifier
       }
     }

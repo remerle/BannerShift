@@ -47,9 +47,11 @@ private func tempLogURL() -> URL {
   let logger = try FileLogger(url: url, isDebugEnabled: { false })
   logger.info("x")
   logger.close()
-  let perms =
-    try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as! NSNumber
-  #expect(perms.intValue == 0o600)
+  // POSIX permissions on macOS come back as an NSNumber-bridged value;
+  // `as? Int` extracts the underlying integer regardless of the bridging
+  // representation, avoiding both force-cast and the legacy NSNumber type.
+  let perms = try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
+  #expect(perms as? Int == 0o600)
 }
 
 @Test func truncatesOversizedFileAtLaunch() throws {

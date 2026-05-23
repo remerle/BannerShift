@@ -26,6 +26,7 @@ enum LaunchAtLoginToggle {
       switch current {
       case .enabled, .requiresApproval:
         try SMAppService.mainApp.unregister()
+
       case .notRegistered, .error:
         try SMAppService.mainApp.register()
       }

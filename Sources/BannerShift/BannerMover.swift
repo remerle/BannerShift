@@ -41,9 +41,11 @@ final class BannerMover {
   }
 
   /// Clear all per-window state and cancel in-flight animations.
-  /// Called when the notification UI process (`NotificationCenter`) exits,
-  /// because every AX element we were tracking is now invalid and any
-  /// in-flight animation would be writing positions to dangling pointers.
+  ///
+  /// Called when the notification UI process (`NotificationCenter`)
+  /// exits, because every AX element we were tracking is now invalid
+  /// and any in-flight animation would be writing positions to
+  /// dangling pointers.
   func reset() {
     baselines.removeAll()
     animator.cancelAll()
@@ -74,20 +76,10 @@ final class BannerMover {
       return
     }
 
-    // Extract banner text, resolve bundle ID, find matching rule.
-    var bannerText = BannerTextExtractor.extract(from: banner)
-    if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
-      bannerText = BannerText(
-        appName: bannerText.appName,
-        bundleID: bid,
-        title: bannerText.title,
-        subtitle: bannerText.subtitle,
-        body: bannerText.body
-      )
-    }
-    let match = matcher.match(rules: rules, banner: bannerText)
-    let position = match?.rule.position ?? defaultPosition
-    let animation = match?.rule.animation ?? .none
+    let resolved = resolvePositionAndAnimation(
+      banner: banner, rules: rules, defaultPosition: defaultPosition)
+    let position = resolved.position
+    let animation = resolved.animation
 
     // Pick the display the window currently belongs to.
     let centerAX = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
@@ -129,33 +121,82 @@ final class BannerMover {
       return
     }
     let target = calc.targetOrigin(for: position)
-
-    // Dispatch per animation style. For shake/bounce the banner must snap
-    // to the target *immediately* (so the OS-default location is never
-    // briefly visible), and only the oscillation waits 150 ms for the OS's
-    // own banner-entry animation to finish. Slide is the exception: its
-    // first frame is the OS-original position, so it must wait the 150 ms
-    // before any frame fires.
-    switch animation {
-    case .none:
-      let frames = AnimationFrames.frames(style: .none, from: target, to: target)
-      animator.animate(windowID: id, window: window, frames: frames, delay: 0)
-    case .slide:
-      let frames = AnimationFrames.frames(
-        style: .slide, from: baseline.originalOrigin, to: target)
-      animator.animate(windowID: id, window: window, frames: frames, delay: Animator.startDelay)
-    case .shake, .bounce:
-      Animator.set(point: target, on: window)
-      let frames = AnimationFrames.frames(style: animation, from: target, to: target)
-      animator.animate(windowID: id, window: window, frames: frames, delay: Animator.startDelay)
-    }
+    dispatchAnimation(
+      animation, windowID: id, window: window, baseline: baseline, target: target)
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
-        + "rule=\(match?.rule.name ?? "(default)") "
+        + "rule=\(resolved.ruleName) "
         + "position=\(position.rawValue) animation=\(animation.rawValue) "
         + "target=\(target)"
     )
+  }
+
+  private struct ResolvedMatch {
+    let position: Position
+    let animation: Animation
+    let ruleName: String
+  }
+
+  /// Extract banner text, resolve the source bundle ID, and find the
+  /// first matching rule (if any).
+  ///
+  /// Returns the position and animation the matched rule overrides to,
+  /// falling back to `defaultPosition` and `.none` when no rule matches,
+  /// plus a human-readable rule name for diagnostic logging.
+  private func resolvePositionAndAnimation(
+    banner: AXUIElement, rules: [Rule], defaultPosition: Position
+  ) -> ResolvedMatch {
+    var bannerText = BannerTextExtractor.extract(from: banner)
+    if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
+      bannerText = BannerText(
+        appName: bannerText.appName,
+        bundleID: bid,
+        title: bannerText.title,
+        subtitle: bannerText.subtitle,
+        body: bannerText.body
+      )
+    }
+    let match = matcher.match(rules: rules, banner: bannerText)
+    return ResolvedMatch(
+      position: match?.rule.position ?? defaultPosition,
+      animation: match?.rule.animation ?? .none,
+      ruleName: match?.rule.name ?? "(default)"
+    )
+  }
+
+  /// Dispatch per animation style.
+  ///
+  /// For shake/bounce the banner snaps to the target *immediately* (so
+  /// the OS-default location is never briefly visible), and only the
+  /// oscillation waits 150 ms for the OS's own banner-entry animation
+  /// to finish. Slide is the exception: its first frame is the
+  /// OS-original position, so it must wait the 150 ms before any frame
+  /// fires.
+  private func dispatchAnimation(
+    _ animation: Animation,
+    windowID: UInt64,
+    window: AXUIElement,
+    baseline: Baseline,
+    target: CGPoint
+  ) {
+    switch animation {
+    case .none:
+      let frames = AnimationFrames.frames(style: .none, from: target, to: target)
+      animator.animate(windowID: windowID, window: window, frames: frames, delay: 0)
+
+    case .slide:
+      let frames = AnimationFrames.frames(
+        style: .slide, from: baseline.originalOrigin, to: target)
+      animator.animate(
+        windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
+
+    case .shake, .bounce:
+      Animator.set(point: target, on: window)
+      let frames = AnimationFrames.frames(style: animation, from: target, to: target)
+      animator.animate(
+        windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
+    }
   }
 
   private func restoreIfNeeded(window: AXUIElement, id: UInt64) {

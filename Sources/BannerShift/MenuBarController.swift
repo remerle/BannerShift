@@ -26,24 +26,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
   func show() {
     guard item == nil else { return }
-    let i = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    if let button = i.button {
-      let img = NSImage(
+    let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    if let button = statusItem.button {
+      let icon = NSImage(
         systemSymbolName: "bell.badge.fill",
         accessibilityDescription: "BannerShift")
-      img?.isTemplate = true
-      button.image = img
+      icon?.isTemplate = true
+      button.image = icon
     }
     let menu = NSMenu()
     menu.delegate = self
-    i.menu = menu
-    item = i
+    statusItem.menu = menu
+    item = statusItem
     rebuildMenu()
   }
 
   func hide() {
-    guard let i = item else { return }
-    NSStatusBar.system.removeStatusItem(i)
+    guard let statusItem = item else { return }
+    NSStatusBar.system.removeStatusItem(statusItem)
     item = nil
   }
 
@@ -69,15 +69,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     let header = NSMenuItem(title: "Default Position", action: nil, keyEquivalent: "")
     header.isEnabled = false
     menu.addItem(header)
-    for p in Position.allCases {
-      let mi = NSMenuItem(
-        title: p.displayName,
+    for position in Position.allCases {
+      let menuItem = NSMenuItem(
+        title: position.displayName,
         action: #selector(selectPosition(_:)),
         keyEquivalent: "")
-      mi.target = self
-      mi.representedObject = p
-      mi.state = (p == preferences.position) ? .on : .off
-      menu.addItem(mi)
+      menuItem.target = self
+      menuItem.representedObject = position
+      menuItem.state = (position == preferences.position) ? .on : .off
+      menu.addItem(menuItem)
     }
     menu.addItem(.separator())
 
@@ -123,9 +123,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
   // MARK: Actions
 
   @objc private func selectPosition(_ sender: NSMenuItem) {
-    guard let p = sender.representedObject as? Position else { return }
-    preferences.position = p
-    onPositionChanged(p)
+    guard let position = sender.representedObject as? Position else { return }
+    preferences.position = position
+    onPositionChanged(position)
   }
 
   @objc private func sendTest(_ sender: NSMenuItem) {

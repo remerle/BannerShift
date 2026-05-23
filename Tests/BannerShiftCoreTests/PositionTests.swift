@@ -7,8 +7,8 @@ import Testing
 }
 
 @Test func positionRawValueRoundTrips() {
-  for p in Position.allCases {
-    #expect(Position(rawValue: p.rawValue) == p)
+  for position in Position.allCases {
+    #expect(Position(rawValue: position.rawValue) == position)
   }
 }
 

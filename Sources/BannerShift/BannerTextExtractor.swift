@@ -4,20 +4,22 @@ import CoreGraphics
 import Foundation
 
 enum BannerTextExtractor {
-  /// Collect text from `banner`'s subtree. Returns ordered strings sorted
-  /// top-to-bottom by AX position so the result is deterministic regardless
-  /// of AX-tree traversal order.
+  /// Build a banner-text snapshot from the AX subtree rooted at `banner`.
   ///
-  /// The mapping from ordered strings to `BannerText` fields is a best-effort
-  /// positional heuristic. Standard macOS banners expose four text elements
-  /// (appName, title, subtitle, body), but sparse banners may have fewer:
-  /// some apps emit only app+title+body (no subtitle), and system alerts
-  /// can be even shorter. To avoid silently misclassifying body text into
-  /// the `subtitle` slot for 3-element banners, we fall back to count-aware
-  /// assignments below.
+  /// Walks the AX subtree, sorts the discovered text elements
+  /// top-to-bottom by AX position so the result is deterministic
+  /// regardless of AX-tree traversal order, then assigns them to
+  /// `BannerText` fields with a best-effort positional heuristic.
   ///
-  /// This heuristic is known to be imperfect and will be tuned against real
-  /// AX trees during the Task 26 manual smoke test pass.
+  /// Standard macOS banners expose four text elements (appName, title,
+  /// subtitle, body), but sparse banners may have fewer: some apps
+  /// emit only app+title+body (no subtitle), and system alerts can be
+  /// even shorter. To avoid silently misclassifying body text into the
+  /// `subtitle` slot for 3-element banners, the assignment is
+  /// count-aware (see the switch below).
+  ///
+  /// This heuristic is imperfect and is expected to be revisited as
+  /// real-world AX-tree shapes are observed across macOS versions.
   static func extract(from banner: AXUIElement) -> BannerText {
     var pairs: [(y: CGFloat, text: String)] = []
     collect(from: banner, into: &pairs)
@@ -25,14 +27,18 @@ enum BannerTextExtractor {
     switch ordered.count {
     case 0:
       return BannerText(appName: "", bundleID: nil, title: "", subtitle: "", body: "")
+
     case 1:
       return BannerText(appName: ordered[0], bundleID: nil, title: "", subtitle: "", body: "")
+
     case 2:
       return BannerText(
         appName: ordered[0], bundleID: nil, title: ordered[1], subtitle: "", body: "")
+
     case 3:
       return BannerText(
         appName: ordered[0], bundleID: nil, title: ordered[1], subtitle: "", body: ordered[2])
+
     default:
       return BannerText(
         appName: ordered[0], bundleID: nil,
@@ -49,9 +55,9 @@ enum BannerTextExtractor {
       AXBannerFinder.stringAttribute(el, kAXValueAttribute as CFString)
       ?? AXBannerFinder.stringAttribute(el, kAXTitleAttribute as CFString)
       ?? AXBannerFinder.stringAttribute(el, kAXDescriptionAttribute as CFString)
-    if let t = text, !t.isEmpty {
+    if let text, !text.isEmpty {
       let y = AXBannerFinder.pointAttribute(el, kAXPositionAttribute as CFString)?.y ?? .infinity
-      out.append((y, t))
+      out.append((y, text))
     }
     for child in AXBannerFinder.arrayAttribute(el, kAXChildrenAttribute as CFString) {
       collect(from: child, into: &out)
