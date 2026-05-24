@@ -3,6 +3,25 @@ import ApplicationServices
 import BannerShiftCore
 import CoreGraphics
 
+/// Orchestrates one banner-repositioning pass over the notification UI
+/// process's windows.
+///
+/// `process(notificationUIWindows:)` is the entry point, called from the
+/// app delegate's debounced AX handler on the main thread; every method
+/// here is main-thread-only because it reads and writes AX element
+/// attributes synchronously. For each window the mover either moves the
+/// contained banner to the position/animation resolved from the user's
+/// rules (or the default), or restores the window to its original
+/// location when there is no banner to move (e.g. the window is the
+/// expanded Notification Center panel, or the banner has gone away).
+///
+/// `baselines` records each moved window's original geometry, keyed by AX
+/// element identity (`elementID`, a pointer bit pattern). The baseline is
+/// captured on the first move so a later restore can put the window back,
+/// and the map is kept bounded by dropping the entry on restore and by
+/// `reset()` when the notification UI process exits and every tracked
+/// element becomes invalid. The mover holds no AX observer itself; it is
+/// handed the current window list each pass.
 final class BannerMover {
   private var baselines: [UInt64: Baseline] = [:]
   private let logger: FileLogger
