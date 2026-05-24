@@ -11,6 +11,12 @@ truth and is injected into the app bundle at build time. See
 
 ## [Unreleased]
 
+### Changed
+
+- When a test notification can't be sent because notifications are disabled, the
+  alert now offers an "Open Settings" button that jumps to the Notifications
+  pane in System Settings.
+
 ### Fixed
 
 - Banners now reposition correctly on macOS 26, whose rebuilt Notification

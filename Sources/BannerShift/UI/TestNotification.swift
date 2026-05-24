@@ -6,8 +6,9 @@ import UserNotifications
 /// in the chosen position.
 ///
 /// Backed by `UNUserNotificationCenter`, so it requests authorization on
-/// first use and alerts the user if notifications are disabled. Invoked
-/// from the menu bar's "Send a Test Notification".
+/// first use and, if notifications are disabled, offers to open the
+/// Notifications pane in System Settings. Invoked from the menu bar's
+/// "Send a Test Notification".
 enum TestNotification {
   /// Send a test banner labeled with `positionName`, requesting
   /// notification permission first if undetermined and alerting the user
@@ -60,7 +61,23 @@ enum TestNotification {
       "Enable notifications in System Settings → Notifications → BannerShift "
       + "to send a test banner."
     alert.alertStyle = .informational
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
+    alert.addButton(withTitle: "Open Settings")
+    alert.addButton(withTitle: "Cancel")
+    if alert.runModal() == .alertFirstButtonReturn {
+      openNotificationSettings()
+    }
+  }
+
+  /// Open System Settings to the Notifications pane.
+  ///
+  /// macOS exposes no deep link to a specific app's notification row, so
+  /// this lands the user on the Notifications list where BannerShift can be
+  /// found. The `x-apple.systempreferences:` scheme is the documented way to
+  /// open a System Settings pane by its extension bundle identifier.
+  private static func openNotificationSettings() {
+    guard
+      let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+    else { return }
+    NSWorkspace.shared.open(url)
   }
 }
