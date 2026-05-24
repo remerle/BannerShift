@@ -26,8 +26,20 @@ chmod +x "$APP/Contents/MacOS/BannerShift"
 cp "$ROOT/Resources/Info.plist"  "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-echo "==> ad-hoc signing"
-codesign --force --sign - \
+# Prefer a stable Developer ID identity when one is installed. macOS keys
+# TCC grants (Accessibility, Notifications) on the signing identity, so a
+# stable identity lets dev rebuilds keep their granted permissions instead
+# of re-prompting on every build. Falls back to ad-hoc when no Developer ID
+# cert is present (e.g. a contributor without signing material).
+SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+if [[ -z "${SIGN_ID:-}" ]]; then
+    SIGN_ID="-"
+    echo "==> ad-hoc signing (no Developer ID identity found)"
+else
+    echo "==> signing with ${SIGN_ID}"
+fi
+codesign --force --sign "${SIGN_ID}" \
     --entitlements "$ROOT/Resources/BannerShift.entitlements" \
     --options runtime \
     "$APP"
