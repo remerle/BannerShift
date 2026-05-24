@@ -72,6 +72,8 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 - Use `final class` for any class that doesn't need subclassing (every class in this repo so far)
 - Use `enum` namespaces for static constant groupings (see `Constants.swift`) — never use uninstantiable `struct` or `class` for this
 - DocC-style triple-slash comments on public API. Cover intent, contract, and non-obvious caveats; do not restate the signature
+- Doc comments are also expected on **internal types** (`class`/`struct`/`enum`/`protocol`) and on **non-trivial internal methods** — anything whose intent, threading, or invariants aren't obvious from the signature. The executable target (`Sources/BannerShift/`) is almost entirely internal; that code is not exempt. `SwiftLint`'s `missing_docs` only enforces `public`/`open` (it can't scope to "types only" — enabling `internal` would also demand comments on every stored property, which we explicitly don't want), so this is a **convention enforced in review**, not by the linter
+- Do **not** add doc comments to fields/stored properties or enum cases just to satisfy a rule. Document a field only when its meaning, units, or invariant is non-obvious; a comment that restates the field name is noise. The same goes for trivial methods and obvious initializers
 - `// MARK: -` to section longer files (see `PositionCalculator.swift`, `BannerMover.swift`)
 - Prefer Swift `Regex` (literal `/.../` or builder syntax) over `NSRegularExpression`. User-supplied patterns must be case-insensitive (see `RuleMatcher.swift`)
 
