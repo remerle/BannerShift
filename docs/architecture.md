@@ -123,7 +123,7 @@ on main anyway. The only background work is `FileLogger`'s serial write queue.
 ## OS fragility
 
 BannerShift depends on a handful of undocumented macOS internals. Each is
-isolated to a constant in `Sources/BannerShiftCore/Constants.swift` so that when
+isolated to a constant in `Sources/BannerShiftCore/Support/Constants.swift` so that when
 a macOS major release breaks one, you fix the constant first and then the
 dependent logic. When you add a workaround for a new OS version, note the symptom
 and the macOS version in a comment on the affected constant.

@@ -66,8 +66,16 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 │   └── AppIcon.{icns,png}
 ├── Sources/
 │   ├── BannerShiftCore/          # pure logic + value types (unit-tested)
+│   │   ├── Geometry/             # positions, displays, window snapshot, coordinate math
+│   │   ├── Animation/            # animation styles + precomputed frame schedules
+│   │   ├── Rules/                # rule model, matcher, store, banner text
+│   │   └── Support/              # constants, debouncer, logger, observer key, preferences
 │   └── BannerShift/              # AppKit + AX integration (executable)
-├── Tests/BannerShiftCoreTests/   # Swift Testing
+│       ├── App/                  # entry point, delegate, permission, launch-at-login
+│       ├── Accessibility/        # AX observer, banner finder, text extraction, watchers
+│       ├── Repositioning/        # BannerMover + Animator
+│       └── UI/                   # menu bar, rule editor, about, test notification
+├── Tests/BannerShiftCoreTests/   # Swift Testing (mirrors the Core subfolders)
 ├── scripts/build-dev.sh          # universal binary, ad-hoc signed
 ├── docs/                         # architecture, configuration, release
 └── .github/workflows/release.yml # tag-triggered, environment-gated release

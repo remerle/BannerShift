@@ -79,7 +79,7 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 
 ### DRY (without premature abstraction)
 
-- A single source of truth for OS-dependent magic strings/numbers: `Sources/BannerShiftCore/Constants.swift`. Do not duplicate banner subroles, panel identifiers, or padding values anywhere else
+- A single source of truth for OS-dependent magic strings/numbers: `Sources/BannerShiftCore/Support/Constants.swift`. Do not duplicate banner subroles, panel identifiers, or padding values anywhere else
 - The Core target is the abstraction layer. If logic in `Sources/BannerShift/*.swift` looks generally useful and has no AppKit/AX dependency, move it to Core and unit-test it
 - Three real call sites before extracting a helper. Two duplications is fine; the global principle 9 applies here
 
@@ -94,7 +94,7 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 
 ### Performance
 
-- Banner repositioning runs on the main thread in response to AX notifications (high frequency under burst conditions). The `Debouncer` (`Sources/BannerShiftCore/Debouncer.swift`) coalesces event storms at `Constants.eventDebounceInterval` — use it, don't bypass it
+- Banner repositioning runs on the main thread in response to AX notifications (high frequency under burst conditions). The `Debouncer` (`Sources/BannerShiftCore/Support/Debouncer.swift`) coalesces event storms at `Constants.eventDebounceInterval` — use it, don't bypass it
 - Cache compiled `Regex` per-rule; do not recompile on every match
 - `BannerMover.baselines` is keyed by AX element identity (`UInt64`). Keep that map bounded by clearing entries when the corresponding banner disappears (see `reset()`)
 - Animations (`Animator.swift`, `AnimationFrames.swift`) are precomputed frame schedules; do not allocate per-frame
