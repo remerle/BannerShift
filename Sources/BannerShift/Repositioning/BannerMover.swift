@@ -223,6 +223,12 @@ final class BannerMover {
   private func resolvePositionAndAnimation(
     banner: AXUIElement, rules: [Rule], defaultPosition: Position
   ) -> ResolvedMatch {
+    // No rules: the default position applies and the banner's text is
+    // irrelevant. Skip the AX subtree text extraction (several cross-process
+    // AX calls) so it stays off the first-move critical path.
+    guard !rules.isEmpty else {
+      return ResolvedMatch(position: defaultPosition, animation: .none, ruleName: "(default)")
+    }
     var bannerText = BannerTextExtractor.extract(from: banner)
     if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
       bannerText = BannerText(
@@ -243,12 +249,14 @@ final class BannerMover {
 
   /// Dispatch per animation style.
   ///
-  /// For shake/bounce the banner snaps to the target *immediately* (so
-  /// the OS-default location is never briefly visible), and only the
-  /// oscillation waits 150 ms for the OS's own banner-entry animation
-  /// to finish. Slide is the exception: its first frame is the
-  /// OS-original position, so it must wait the 150 ms before any frame
-  /// fires.
+  /// `.none` snaps to the target synchronously: there is no animation, so
+  /// scheduling even a single zero-offset frame through the animator would
+  /// only defer the move by an extra run-loop turn. For shake/bounce the
+  /// banner likewise snaps to the target *immediately* (so the OS-default
+  /// location is never briefly visible), and only the oscillation waits
+  /// 150 ms for the OS's own banner-entry animation to finish. Slide is the
+  /// exception: its first frame is the OS-original position, so it must wait
+  /// the 150 ms before any frame fires.
   private func dispatchAnimation(
     _ animation: Animation,
     windowID: UInt64,
@@ -258,8 +266,12 @@ final class BannerMover {
   ) {
     switch animation {
     case .none:
-      let frames = AnimationFrames.frames(style: .none, from: target, to: target)
-      animator.animate(windowID: windowID, window: window, frames: frames, delay: 0)
+      // Cancel any in-flight animation for this window (a superseded
+      // slide/shake) so it can't keep writing frames, then move now. This
+      // is what `animator.animate` would do internally, minus the extra
+      // asyncAfter hop that a zero-offset frame schedule incurs.
+      animator.cancel(windowID: windowID)
+      Animator.set(point: target, on: window)
 
     case .slide:
       let frames = AnimationFrames.frames(
