@@ -20,10 +20,46 @@ The code is split into two SwiftPM targets, and the split is load-bearing.
   the menu-bar UI, the window mover. It is verified by exercising real macOS
   notifications against a built `.app`, not by unit tests.
 
-The rule of thumb: **if a piece of logic could be tested without a Mac's window
-server, it belongs in Core.** When something in the executable target starts to
-look generally useful and has no UI/AX dependency, move it down into Core and
-test it there.
+The boundary is **dependency-based and enforced by imports**:
+
+| | `BannerShiftCore` may import | `BannerShift` (app) may import |
+| --- | --- | --- |
+| Frameworks | `Foundation`, `CoreGraphics`, `OSLog` | all of Core's, **plus** `AppKit`, `ApplicationServices` (AX), `ServiceManagement`, `UserNotifications` |
+
+The rule of thumb for placing new code: **if a piece of logic could be tested
+without a Mac's window server, it belongs in Core.** When something in the
+executable target starts to look generally useful and has no UI/AX dependency,
+move it down into Core and test it there.
+
+Note that Core is *not* "zero side effects": `FileLogger` writes a file and
+`RuleStore`/`Preferences` use `UserDefaults`. Those are allowed because they're
+Foundation-only and testable with temp directories / custom defaults suites. The
+line is the framework dependency and testability, not strict purity.
+
+### Functional core, imperative shell
+
+The split follows the functional-core / imperative-shell pattern:
+
+- **The app is the imperative shell.** It talks to the messy, stateful OS:
+  observes the AX tree, reads `NSScreen`, posts notifications, draws the menu
+  bar, and performs the side effects.
+- **Core is the pure decision layer.** Value types and deterministic logic, with
+  no dependency on the system UI.
+
+The seam between them is a small set of plain value types that the app distills
+from system objects and hands to Core:
+
+| App reads (system object) | Distills into (Core value type) |
+| --- | --- |
+| `NSScreen` | `ScreenInfo` |
+| `AXUIElement` window | `AXWindowKey`, `BannerWindowSnapshot` |
+| AX text subtree | `BannerText` |
+
+Core then *decides* — `RuleMatcher` (which rule applies), `PositionCalculator`
+(the target origin), `AnimationFrames` (the frame schedule) — and the app *acts*
+on that decision. A clean illustration of "decide vs. do": Core's
+`AnimationFrames` computes the precomputed frame schedule (pure math), while the
+app's `Animator` executes that schedule against AX over time on the run loop.
 
 ## End-to-end flow
 
