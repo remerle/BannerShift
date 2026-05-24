@@ -85,7 +85,7 @@ flowchart TD
      and `none` apply;
    - computes the destination with **`PositionCalculator`** (Core) on the screen
      the banner currently belongs to (chosen by **`DisplaySelector`**), caching a
-     **`Baseline`** of the window's original geometry on first move;
+     **`BannerWindowSnapshot`** of the window's original geometry on first move;
    - dispatches the move through **`Animator`**.
 
 5. **`Animator`** writes the AX position attribute. `none` snaps to the target;
@@ -94,7 +94,7 @@ flowchart TD
    `AnimationFrames` (Core) and dispatched as `DispatchWorkItem`s on the main
    queue at precomputed deadlines — nothing is allocated per frame. When a banner
    disappears, `BannerMover` restores the window's original position and drops
-   its baseline.
+   its snapshot.
 
 ## Key Core types
 

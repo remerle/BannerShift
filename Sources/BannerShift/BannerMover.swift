@@ -15,15 +15,15 @@ import CoreGraphics
 /// location when there is no banner to move (e.g. the window is the
 /// expanded Notification Center panel, or the banner has gone away).
 ///
-/// `baselines` records each moved window's original geometry, keyed by AX
-/// element identity (`elementID`, a pointer bit pattern). The baseline is
-/// captured on the first move so a later restore can put the window back,
-/// and the map is kept bounded by dropping the entry on restore and by
-/// `reset()` when the notification UI process exits and every tracked
-/// element becomes invalid. The mover holds no AX observer itself; it is
-/// handed the current window list each pass.
+/// `windowSnapshots` records each moved window's original geometry, keyed
+/// by AX element identity (`elementID`, a pointer bit pattern). The
+/// snapshot is captured on the first move so a later restore can put the
+/// window back, and the map is kept bounded by dropping the entry on
+/// restore and by `reset()` when the notification UI process exits and
+/// every tracked element becomes invalid. The mover holds no AX observer
+/// itself; it is handed the current window list each pass.
 final class BannerMover {
-  private var baselines: [UInt64: Baseline] = [:]
+  private var windowSnapshots: [UInt64: BannerWindowSnapshot] = [:]
   private let logger: FileLogger
   private let preferences: Preferences
   private let ruleStore: RuleStore
@@ -66,7 +66,7 @@ final class BannerMover {
   /// and any in-flight animation would be writing positions to
   /// dangling pointers.
   func reset() {
-    baselines.removeAll()
+    windowSnapshots.removeAll()
     animator.cancelAll()
   }
 
@@ -103,15 +103,15 @@ final class BannerMover {
         id: id, windowFrame: windowFrame, bannerFrame: bannerFrame, screens: screens)
     else { return }
 
-    guard calc.invariantHolds, let baseline = baselines[id] else {
+    guard calc.invariantHolds, let snapshot = windowSnapshots[id] else {
       logger.error(
-        "BannerMover: invariant violated or baseline missing; skipping move"
+        "BannerMover: invariant violated or window snapshot missing; skipping move"
       )
       return
     }
     let target = calc.targetOrigin(for: resolved.position)
     dispatchAnimation(
-      resolved.animation, windowID: id, window: window, baseline: baseline, target: target)
+      resolved.animation, windowID: id, window: window, snapshot: snapshot, target: target)
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
@@ -140,14 +140,14 @@ final class BannerMover {
       logger.error("BannerMover: no screen available, skipping move")
       return nil
     }
-    if baselines[id] == nil {
-      baselines[id] = Baseline(
+    if windowSnapshots[id] == nil {
+      windowSnapshots[id] = BannerWindowSnapshot(
         originalOrigin: windowFrame.origin,
         windowFrame: windowFrame,
         bannerFrame: bannerFrame
       )
     }
-    guard let baseline = baselines[id] else { return nil }
+    guard let snapshot = windowSnapshots[id] else { return nil }
     // Resolve the primary display by its isPrimary flag so this matches
     // DisplaySelector.primary. `screens.first` would agree today by
     // coincidence (currentScreens() assigns isPrimary == idx == 0) but
@@ -157,8 +157,8 @@ final class BannerMover {
       return nil
     }
     return PositionCalculator(
-      windowFrame: baseline.windowFrame,
-      bannerFrame: baseline.bannerFrame,
+      windowFrame: snapshot.windowFrame,
+      bannerFrame: snapshot.bannerFrame,
       screen: screen,
       primaryHeight: primaryHeight
     )
@@ -209,7 +209,7 @@ final class BannerMover {
     _ animation: Animation,
     windowID: UInt64,
     window: AXUIElement,
-    baseline: Baseline,
+    snapshot: BannerWindowSnapshot,
     target: CGPoint
   ) {
     switch animation {
@@ -219,7 +219,7 @@ final class BannerMover {
 
     case .slide:
       let frames = AnimationFrames.frames(
-        style: .slide, from: baseline.originalOrigin, to: target)
+        style: .slide, from: snapshot.originalOrigin, to: target)
       animator.animate(
         windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
 
@@ -232,10 +232,10 @@ final class BannerMover {
   }
 
   private func restoreIfNeeded(window: AXUIElement, id: UInt64) {
-    guard let baseline = baselines[id] else { return }
+    guard let snapshot = windowSnapshots[id] else { return }
     animator.cancel(windowID: id)
-    Animator.set(point: baseline.originalOrigin, on: window)
-    baselines.removeValue(forKey: id)
+    Animator.set(point: snapshot.originalOrigin, on: window)
+    windowSnapshots.removeValue(forKey: id)
     logger.debug("BannerMover: restored window \(String(format: "%016llx", id))")
   }
 

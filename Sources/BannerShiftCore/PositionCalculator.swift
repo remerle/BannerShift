@@ -12,14 +12,14 @@ import CoreGraphics
 public struct PositionCalculator {
   /// AX-space frame of the container window holding the banner.
   ///
-  /// Read from `Baseline.windowFrame` so an in-flight animation cannot
-  /// feed back into the math.
+  /// Read from `BannerWindowSnapshot.windowFrame` so an in-flight
+  /// animation cannot feed back into the math.
   public let windowFrame: CGRect
 
   /// AX-space frame of the banner element inside `windowFrame`.
   ///
-  /// Also read from `Baseline` for the same reason: stability across
-  /// repeated passes against the same window.
+  /// Also read from `BannerWindowSnapshot` for the same reason: stability
+  /// across repeated passes against the same window.
   public let bannerFrame: CGRect
 
   /// Snapshot of the display the banner should land on.

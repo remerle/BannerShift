@@ -9,7 +9,7 @@ import CoreGraphics
 /// otherwise feed back into subsequent passes). The snapshot also
 /// remembers `originalOrigin` so the window can be restored to the
 /// OS-default position when the banner is dismissed.
-public struct Baseline: Equatable, Sendable {
+public struct BannerWindowSnapshot: Equatable, Sendable {
   /// Window origin as the OS placed it before any reposition.
   ///
   /// Used as the slide animation's starting point and as the restore
