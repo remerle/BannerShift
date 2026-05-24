@@ -68,8 +68,10 @@ make secrets         # subsequent runs: refresh .env + .secrets/ from 1Password
 make release         # build, sign, notarize, staple, package
 ```
 
-(`make secrets-setup` / `make secrets` wrap `./populate-secrets.sh --import-certs`
-/ `./populate-secrets.sh`; `make release` wraps `./release.sh`.)
+(`make secrets-setup` / `make secrets` wrap `./scripts/populate-secrets.sh --import-certs`
+/ `./scripts/populate-secrets.sh`; `make release` wraps `./scripts/release.sh`. The
+local path is a manual break-glass option — GitHub Actions above is the primary
+way to cut a release.)
 
 ### Prerequisites
 
@@ -81,19 +83,19 @@ make release         # build, sign, notarize, staple, package
      read at runtime so the key ID never appears in the script.
 2. A 1Password item for the Developer ID Application certificate (and one for the
    Installer cert if you later add a `.pkg` build).
-3. Edit `populate-secrets.sh` and replace the placeholders: `VAULT`,
+3. Edit `scripts/populate-secrets.sh` and replace the placeholders: `VAULT`,
    `APP_CERT_ITEM`, `INSTALLER_CERT_ITEM`, `ASC_ITEM`.
 4. Run `op signin` if you aren't already signed in to the 1Password CLI.
 
 ### What the scripts do
 
-`populate-secrets.sh` writes a gitignored `.env` and `.secrets/AuthKey.p8` (mode
+`scripts/populate-secrets.sh` writes a gitignored `.env` and `.secrets/AuthKey.p8` (mode
 `0600`). With `--import-certs` it also fetches the `.p12` files, imports them into
 the login keychain scoped to `codesign`/`security`/`productsign` (not `-A`), and
 deletes the `.p12` files afterward. It sets `umask 077` and traps cleanup on
 exit, so secret material doesn't linger if the script aborts.
 
-`release.sh` consumes `.env` and `.secrets/`, builds the universal app, signs it
+`scripts/release.sh` consumes `.env` and `.secrets/`, builds the universal app, signs it
 with the Developer ID identity, notarizes via `xcrun notarytool submit --wait`
 (failing fast on any non-`Accepted` status and fetching the notary log for
 diagnostics), staples the ticket, validates, runs a `spctl` smoke check, and

@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 #
-# Release build: clean → universal swift build → Developer ID sign →
-# notarize → staple → package.
+# MANUAL / BREAK-GLASS release build. You normally should NOT need this.
 #
-# Reads .env produced by populate-secrets.sh.
+# The primary, supported way to cut a release is to push a `v*` git tag and let
+# .github/workflows/release.yml sign, notarize, and publish (see docs/release.md).
+# Use this script only when GitHub Actions is unavailable, or to reproduce a
+# notarization failure locally.
+#
+# Caveat: this builds the version baked into Resources/Info.plist (a static
+# placeholder), NOT a tag-derived version like the CI workflow does. Treat its
+# artifacts as test/break-glass builds unless you bump Info.plist deliberately.
+#
+# Does: clean → universal swift build → Developer ID sign → notarize → staple →
+# package. Reads .env produced by scripts/populate-secrets.sh.
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# This script lives in scripts/; the repo root is its parent.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${ROOT}"
 
 # Remove the intermediate notarization ZIP on any exit so a SIGINT,

@@ -62,15 +62,15 @@ validate: lint build test ## Pre-merge gate: lint + build + test. (analyze is se
 
 .PHONY: secrets-setup
 secrets-setup: ## First-time machine setup: import Developer ID cert then pull secrets.
-	./populate-secrets.sh --import-certs
+	./scripts/populate-secrets.sh --import-certs
 
 .PHONY: secrets
 secrets: ## Pull signing secrets from 1Password into .env + .secrets/ (re-run anytime).
-	./populate-secrets.sh
+	./scripts/populate-secrets.sh
 
 .PHONY: release
 release: ## Signed, notarized, stapled release build. Requires `make secrets` first.
-	./release.sh
+	./scripts/release.sh
 
 # ---- Logs ----
 

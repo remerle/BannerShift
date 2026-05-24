@@ -58,8 +58,6 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 .
 ├── Makefile                      # build/test/format/validate driver
 ├── Package.swift                 # SwiftPM manifest (macOS 13+, swift-testing dep)
-├── populate-secrets.sh           # 1Password -> .env + .secrets/ materializer
-├── release.sh                    # Developer ID sign + notarize + staple + package
 ├── Resources/
 │   ├── Info.plist                # LSUIElement, AX usage description, bundle metadata
 │   ├── BannerShift.entitlements
@@ -76,7 +74,10 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 │       ├── Repositioning/        # BannerMover + Animator
 │       └── UI/                   # menu bar, rule editor, about, test notification
 ├── Tests/BannerShiftCoreTests/   # Swift Testing (mirrors the Core subfolders)
-├── scripts/build-dev.sh          # universal binary, ad-hoc signed
+├── scripts/
+│   ├── build-dev.sh              # universal binary, ad-hoc signed
+│   ├── populate-secrets.sh       # 1Password -> .env + .secrets/ materializer
+│   └── release.sh                # manual Developer ID sign + notarize + staple (GHA is primary)
 ├── docs/                         # architecture, configuration, release
 └── .github/workflows/release.yml # tag-triggered, environment-gated release
 ```

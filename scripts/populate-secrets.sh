@@ -16,9 +16,12 @@
 set -euo pipefail
 umask 077
 
+# This script lives in scripts/; .env and .secrets/ are materialized at the
+# repo root (its parent), where release.sh expects them.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SECRETS_DIR="${SCRIPT_DIR}/.secrets"
-ENV_FILE="${SCRIPT_DIR}/.env"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SECRETS_DIR="${ROOT}/.secrets"
+ENV_FILE="${ROOT}/.env"
 
 VAULT="ynbhaihbhz2iftkuvbe2k4liya"
 APP_CERT_ITEM="dsvkem2kue3kn6x5ibpuagogh4"

@@ -22,8 +22,8 @@ Sources/BannerShift/        AppKit + AX integration, executable target
 Tests/BannerShiftCoreTests/ Swift Testing (`@Test`, `#expect`)
 Resources/                  Info.plist, entitlements, AppIcon
 scripts/build-dev.sh        universal + ad-hoc-signed .app at build/BannerShift.app
-populate-secrets.sh         1Password → .env + .secrets/AuthKey.p8 (gitignored)
-release.sh                  Developer ID sign + notarize + staple + package
+scripts/populate-secrets.sh 1Password → .env + .secrets/AuthKey.p8 (gitignored)
+scripts/release.sh          manual Developer ID sign + notarize + staple (GHA is the primary path)
 .github/workflows/          release.yml only (tag-triggered, environment-gated)
 ```
 
@@ -90,7 +90,7 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 - Rule patterns are user-supplied Swift `Regex`. Compile once at rule-load time, fail closed (skip the rule, log the error) on invalid patterns — never let a bad rule crash the matcher
 - The app must terminate, not silently degrade, on denied Accessibility permission. Don't add a "limp along without AX" mode
 - Entitlements stay minimal (`Resources/BannerShift.entitlements`). No new entitlements without a documented reason in the PR that adds them
-- For shell scripts (`release.sh`, `populate-secrets.sh`, `scripts/*.sh`): `set -euo pipefail` at the top, `umask 077` before writing any secret material, `trap` cleanup on EXIT for temp files and keychains. Never pass secrets as CLI args
+- For shell scripts (`scripts/*.sh`): `set -euo pipefail` at the top, `umask 077` before writing any secret material, `trap` cleanup on EXIT for temp files and keychains. Never pass secrets as CLI args
 
 ### Performance
 
