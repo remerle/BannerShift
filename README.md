@@ -37,16 +37,18 @@ Click the bell icon in the menu bar:
 ## Develop
 
 ```bash
-make help         # list every target
-make build        # debug build
-make test         # 75 tests, Swift Testing
-make format       # apply swift-format
-make format-check # report only, no rewrites
-make validate     # format-check + build + test (CI gate)
-make dev          # run scripts/build-dev.sh
-make run          # build + open the .app
-make clean        # remove .build and build
-make tail-log     # tail ~/Library/Logs/BannerShift.log
+make help          # list every target
+make build         # debug build
+make test          # Swift Testing suite covering BannerShiftCore
+make format        # apply swift-format
+make lint          # swift-format check + SwiftLint (no rewrites)
+make format-check  # alias for `make lint`
+make analyze       # slow: SwiftLint analyzer rules (run periodically, not in validate)
+make validate      # lint + build + test (CI gate)
+make dev           # universal ad-hoc-signed .app at build/BannerShift.app
+make run           # build + open the .app
+make clean         # remove .build and build
+make tail-log      # tail ~/Library/Logs/BannerShift.log
 ```
 
 The project is split between two SwiftPM targets:

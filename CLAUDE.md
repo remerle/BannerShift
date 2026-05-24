@@ -32,16 +32,21 @@ The Core / executable split is load-bearing: anything that could be unit-tested 
 ## Dev commands
 
 ```
-make help          # list every target
-make build         # debug build
-make test          # run the test suite (Swift Testing)
-make format        # apply swift-format in place
-make lint          # swift-format check + SwiftLint (no auto-fix)
-make analyze       # slow: SwiftLint analyzer rules (unused_declaration, unused_import); not in validate
-make validate      # lint + build + test  — pre-merge gate
-make dev           # universal ad-hoc-signed .app at build/BannerShift.app
-make run           # build + open the .app
-make tail-log      # tail ~/Library/Logs/BannerShift.log
+make help           # list every target
+make build          # debug build
+make test           # run the test suite (Swift Testing)
+make clean          # remove build artifacts
+make format         # apply swift-format in place
+make lint           # swift-format check + SwiftLint (no auto-fix)
+make format-check   # alias for `make lint`
+make analyze        # slow: SwiftLint analyzer rules (unused_declaration, unused_import); not in validate
+make validate       # lint + build + test  — pre-merge gate
+make dev            # universal ad-hoc-signed .app at build/BannerShift.app
+make run            # build + open the .app
+make tail-log       # tail ~/Library/Logs/BannerShift.log
+make secrets-setup  # first-time machine setup: import Developer ID cert then pull secrets
+make secrets        # pull signing secrets from 1Password into .env + .secrets/
+make release        # signed, notarized, stapled release build (requires `make secrets`)
 ```
 
 Always run `make validate` before declaring work complete on a change that touches `Sources/` or `Tests/`. Run `make analyze` periodically (not on every change) to catch dead code and unused imports.
@@ -59,7 +64,7 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 - Use `enum` namespaces for static constant groupings (see `Constants.swift`) — never use uninstantiable `struct` or `class` for this
 - DocC-style triple-slash comments on public API. Cover intent, contract, and non-obvious caveats; do not restate the signature
 - `// MARK: -` to section longer files (see `PositionCalculator.swift`, `BannerMover.swift`)
-- Prefer Swift `Regex` (literal `/.../ `or builder syntax) over `NSRegularExpression`. User-supplied patterns must be case-insensitive (see `RuleMatcher.swift`)
+- Prefer Swift `Regex` (literal `/.../` or builder syntax) over `NSRegularExpression`. User-supplied patterns must be case-insensitive (see `RuleMatcher.swift`)
 
 ### DRY (without premature abstraction)
 
