@@ -76,3 +76,40 @@ private func tempLogURL() -> URL {
   #expect(contents.contains("ERROR"))
   #expect(contents.range(of: #"\d{4}-\d{2}-\d{2}T"#, options: .regularExpression) != nil)
 }
+
+/// Records what the logger routes to the unified-log sink.
+///
+/// The logger only invokes the sink on its serial queue, and `close()` is
+/// a `queue.sync` barrier, so reading `calls` after `close()` is safe.
+private final class SinkSpy {
+  var calls: [(FileLogger.Level, String)] = []
+  func record(_ level: FileLogger.Level, _ message: String) {
+    calls.append((level, message))
+  }
+}
+
+@Test func mirrorsInfoAndErrorToUnifiedLog() throws {
+  let spy = SinkSpy()
+  let logger = try FileLogger(
+    url: tempLogURL(), isDebugEnabled: { true }, unifiedLogSink: spy.record)
+  logger.info("up")
+  logger.error("bad")
+  logger.close()
+  #expect(spy.calls.contains { $0.0 == .info && $0.1 == "up" })
+  #expect(spy.calls.contains { $0.0 == .error && $0.1 == "bad" })
+}
+
+@Test func neverMirrorsDebugToUnifiedLog() throws {
+  // Security invariant: DEBUG is the only level that may carry notification
+  // content, so it must never reach the unified log — only the gated file.
+  let url = tempLogURL()
+  let spy = SinkSpy()
+  let logger = try FileLogger(
+    url: url, isDebugEnabled: { true }, unifiedLogSink: spy.record)
+  logger.debug("notification body text")
+  logger.close()
+  #expect(spy.calls.isEmpty)
+  // ...but it is still written to the gated on-disk file.
+  let contents = try String(contentsOf: url)
+  #expect(contents.contains("notification body text"))
+}

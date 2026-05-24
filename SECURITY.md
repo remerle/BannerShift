@@ -37,6 +37,11 @@ about its risk surface.
   disk unless you explicitly turn on debug logging (off by default). See
   [docs/configuration.md](docs/configuration.md#logging). The default log level
   records operational events, not notification bodies.
+- **Notification content never reaches the system log.** Operational `INFO`/
+  `ERROR` lines are mirrored to the macOS unified log (so the agent is
+  diagnosable in Console/`sysdiagnose`), but the debug level that may carry
+  notification text is written only to the gated `0600` file and is never
+  mirrored — enforced in code and covered by a regression test.
 - **No network, no telemetry.** BannerShift makes no network connections and
   collects no analytics. It is a single local process serving a single user.
 - **No process injection or rendering.** It does not subclass, inject into, or

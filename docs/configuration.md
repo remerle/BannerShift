@@ -118,7 +118,17 @@ BannerShift writes one log file:
   debug logging off (the default), **no notification text is written to disk.**
 - The file is capped at 5 MB; if it exceeds that at launch, it's removed and
   recreated (no rolling history).
-- If a file write fails, the logger falls back to the system log.
+- `INFO` and `ERROR` lines (which never contain notification content) are also
+  mirrored to the macOS unified log, so the agent shows up in Console.app and
+  `sysdiagnose` like any other app. `DEBUG` is **never** mirrored — notification
+  content stays in the gated file only. View the unified-log stream with:
+
+  ```bash
+  log stream --predicate 'subsystem == "com.emerle.BannerShift"' --level info
+  ```
+
+The file is the system of record; the unified-log mirror is a convenience and a
+fallback for when a file write fails.
 
 Tail it during development with:
 
