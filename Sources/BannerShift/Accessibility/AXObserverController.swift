@@ -23,7 +23,7 @@ final class AXObserverController {
   private let appElement: AXUIElement
   private var observer: AXObserver?
   private var runLoopSource: CFRunLoopSource?
-  private var registeredWindowKeys: Set<ObserverKey> = []
+  private var registeredWindowKeys: Set<AXWindowKey> = []
   private var handler: EventHandler?
   private let logger: FileLogger
 
@@ -150,12 +150,12 @@ final class AXObserverController {
     }
   }
 
-  private func makeKey(for window: AXUIElement) -> ObserverKey {
+  private func makeKey(for window: AXUIElement) -> AXWindowKey {
     let role = AXBannerFinder.stringAttribute(window, kAXRoleAttribute as CFString) ?? "?"
     let subrole = AXBannerFinder.stringAttribute(window, kAXSubroleAttribute as CFString) ?? "?"
     let size = AXBannerFinder.sizeAttribute(window, kAXSizeAttribute as CFString) ?? .zero
     let id = UInt64(UInt(bitPattern: Unmanaged.passUnretained(window).toOpaque()))
-    return ObserverKey(elementID: id, role: role, subrole: subrole, size: size)
+    return AXWindowKey(elementID: id, role: role, subrole: subrole, size: size)
   }
 
   // C callback; trampoline into the Swift handler.

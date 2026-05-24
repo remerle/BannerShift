@@ -1,13 +1,14 @@
 import CoreGraphics
 
-/// De-duplication key for the AX observer's registered-windows set.
+/// Identity of an AX window, used as the de-duplication key for the AX
+/// observer's registered-windows set.
 ///
 /// Pointer-identity alone (`elementID`) is enough to dedupe within a
 /// single notification UI process lifetime, but `role`, `subrole`, and
 /// `size` are kept as part of the key so a window whose AX shape has
 /// changed (rare, but possible across OS updates) is re-registered
 /// rather than mis-coalesced with a stale entry.
-public struct ObserverKey: Hashable, Sendable {
+public struct AXWindowKey: Hashable, Sendable {
   /// Stable opaque address of the underlying AX element.
   ///
   /// `AXUIElement` pointer identity is stable across attribute changes

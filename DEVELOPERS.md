@@ -69,7 +69,7 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 │   │   ├── Geometry/             # positions, displays, window snapshot, coordinate math
 │   │   ├── Animation/            # animation styles + precomputed frame schedules
 │   │   ├── Rules/                # rule model, matcher, store, banner text
-│   │   └── Support/              # constants, debouncer, logger, observer key, preferences
+│   │   └── Support/              # constants, debouncer, logger, AX window key, preferences
 │   └── BannerShift/              # AppKit + AX integration (executable)
 │       ├── App/                  # entry point, delegate, permission, launch-at-login
 │       ├── Accessibility/        # AX observer, banner finder, text extraction, watchers

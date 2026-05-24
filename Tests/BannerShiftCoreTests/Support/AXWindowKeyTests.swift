@@ -4,10 +4,10 @@ import Testing
 @testable import BannerShiftCore
 
 @Test func identicalKeysAreEqual() {
-  let lhs = ObserverKey(
+  let lhs = AXWindowKey(
     elementID: 0x1000, role: "AXWindow", subrole: "AXSystemDialog",
     size: CGSize(width: 1920, height: 1080))
-  let rhs = ObserverKey(
+  let rhs = AXWindowKey(
     elementID: 0x1000, role: "AXWindow", subrole: "AXSystemDialog",
     size: CGSize(width: 1920, height: 1080))
   #expect(lhs == rhs)
@@ -15,10 +15,10 @@ import Testing
 }
 
 @Test func differentElementIDsDoNotCollide() {
-  let lhs = ObserverKey(
+  let lhs = AXWindowKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  let rhs = ObserverKey(
+  let rhs = AXWindowKey(
     elementID: 0x2000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
   #expect(lhs != rhs)
@@ -27,13 +27,13 @@ import Testing
 @Test func sameShapeDifferentElementIDsStayDistinct() {
   // The bug we're fixing: two banner windows with identical role/subrole/size
   // but different identity must remain distinct keys.
-  var set: Set<ObserverKey> = []
+  var set: Set<AXWindowKey> = []
   set.insert(
-    ObserverKey(
+    AXWindowKey(
       elementID: 0xA, role: "AXWindow", subrole: "AXSystemDialog",
       size: CGSize(width: 1920, height: 1080)))
   set.insert(
-    ObserverKey(
+    AXWindowKey(
       elementID: 0xB, role: "AXWindow", subrole: "AXSystemDialog",
       size: CGSize(width: 1920, height: 1080)))
   #expect(set.count == 2)
@@ -43,10 +43,10 @@ import Testing
   // Position changes every time we move a window — must not affect identity.
   // (Two keys built with the same elementID/role/subrole/size are equal regardless of where
   // the window is on screen because position is not part of the key.)
-  let lhs = ObserverKey(
+  let lhs = AXWindowKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
-  let rhs = ObserverKey(
+  let rhs = AXWindowKey(
     elementID: 0x1000, role: "AXWindow", subrole: "X",
     size: CGSize(width: 1, height: 1))
   #expect(lhs == rhs)
