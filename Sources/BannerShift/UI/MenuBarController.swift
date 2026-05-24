@@ -1,6 +1,13 @@
 import AppKit
 import BannerShiftCore
 
+/// Owns the menu-bar status item and its dropdown menu.
+///
+/// The menu is rebuilt on every open (`menuNeedsUpdate`) so checkmarks and
+/// the launch-at-login title reflect current state without manual
+/// invalidation. User actions are forwarded to the closures supplied at
+/// init rather than handled here, which keeps AppKit menu wiring out of
+/// the app delegate.
 final class MenuBarController: NSObject, NSMenuDelegate {
   private var item: NSStatusItem?
   private let preferences: Preferences
@@ -24,6 +31,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     self.onQuit = onQuit
   }
 
+  /// Install the status item and its menu in the menu bar.
+  ///
+  /// Idempotent — a second call while the icon is already shown is a no-op.
   func show() {
     guard item == nil else { return }
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -41,12 +51,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     rebuildMenu()
   }
 
+  /// Remove the status item from the menu bar.
+  ///
+  /// The controller keeps running and can be re-shown with `show()`.
   func hide() {
     guard let statusItem = item else { return }
     NSStatusBar.system.removeStatusItem(statusItem)
     item = nil
   }
 
+  /// `NSMenuDelegate` hook: rebuild the menu just before it opens so its
+  /// contents (default-position checkmark, launch-at-login title and
+  /// state) reflect the current preferences and system status.
   func menuNeedsUpdate(_ menu: NSMenu) {
     rebuildMenu()
   }

@@ -2,7 +2,16 @@ import AppKit
 import BannerShiftCore
 import UserNotifications
 
+/// Posts a real local notification so the user can confirm banners land
+/// in the chosen position.
+///
+/// Backed by `UNUserNotificationCenter`, so it requests authorization on
+/// first use and alerts the user if notifications are disabled. Invoked
+/// from the menu bar's "Send a Test Notification".
 enum TestNotification {
+  /// Send a test banner labeled with `positionName`, requesting
+  /// notification permission first if undetermined and alerting the user
+  /// if it has been denied.
   static func send(positionName: String) {
     let center = UNUserNotificationCenter.current()
     center.getNotificationSettings { settings in

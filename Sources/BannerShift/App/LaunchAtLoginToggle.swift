@@ -1,6 +1,13 @@
 import AppKit
 import ServiceManagement
 
+/// BannerShift's view of its login-item registration, mapped from
+/// `SMAppService.Status`.
+///
+/// `requiresApproval` means macOS registered the item but the user must
+/// approve it in System Settings before it takes effect; `error` is a
+/// transient or persistent Service Management failure (see
+/// `LaunchAtLoginToggle.toggle`).
 enum LaunchAtLoginState {
   case notRegistered
   case enabled
@@ -8,7 +15,16 @@ enum LaunchAtLoginState {
   case error
 }
 
+/// Reads and flips whether BannerShift launches at login, via
+/// `SMAppService.mainApp`.
+///
+/// The single place that touches Service Management; `MenuBarController`
+/// drives it from the menu and surfaces `requiresApproval` to the user.
 enum LaunchAtLoginToggle {
+  /// Current registration state, derived from `SMAppService.mainApp.status`.
+  ///
+  /// `.notFound` is folded into `.notRegistered` (same meaning to the
+  /// user); an unknown future status becomes `.error`.
   static var current: LaunchAtLoginState {
     switch SMAppService.mainApp.status {
     case .notRegistered: return .notRegistered

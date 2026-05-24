@@ -1,8 +1,16 @@
 import AppKit
 
+/// Builds and shows the small "About BannerShift" window (icon, name,
+/// version, maintainer, copyright).
+///
+/// The window is created lazily on first `show()` and retained, so
+/// reopening reuses it; `isReleasedWhenClosed = false` keeps that
+/// reference valid after the user closes it.
 final class AboutWindowController {
   private var window: NSWindow?
 
+  /// Show the About window, building it on first call and re-focusing the
+  /// existing one on subsequent calls.
   func show() {
     if let window {
       window.makeKeyAndOrderFront(nil)

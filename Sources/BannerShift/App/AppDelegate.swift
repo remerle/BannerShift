@@ -3,6 +3,14 @@ import BannerShiftCore
 import Foundation
 import OSLog
 
+/// Application entry point and lifecycle owner.
+///
+/// Wires up the full dependency graph in `applicationDidFinishLaunching`
+/// in a strict order (logger → permission → rules → mover → process
+/// watcher → menu bar) and fails fast by terminating if the log file
+/// can't be opened or Accessibility permission is denied. The dependency
+/// properties are late-initialized there and stay nil if startup aborts,
+/// which is why teardown uses optional chaining throughout.
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let preferences = Preferences()
   private let osLog = Logger(subsystem: Constants.bundleIdentifier, category: "app")
@@ -22,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var watcher: NotificationUIWatcher?
   private var menuBar: MenuBarController?
 
+  /// Build the dependency graph and start observing notifications.
+  ///
+  /// Runs the ordered bring-up described on the type. Terminates the
+  /// process — rather than continuing in a degraded state — if the log
+  /// file can't be opened or Accessibility permission isn't granted.
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Each step constructs a dependency as a local non-optional, then
     // assigns to self. Downstream steps reference the locals so the
@@ -110,6 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// Reveal the menu-bar icon when the user re-activates the app.
+  ///
+  /// Relaunching or front-launching BannerShift is the documented way
+  /// back from "Hide Menu Bar Icon"; this clears `iconHidden` and re-shows
+  /// the icon.
   func applicationDidBecomeActive(_ notification: Notification) {
     // Hidden-icon recovery: relaunch (or front-launch) reveals the icon.
     if preferences.iconHidden {
@@ -118,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
+  /// Tear down the process watcher and AX observer and flush the log on quit.
   func applicationWillTerminate(_ notification: Notification) {
     watcher?.stop()
     axObserver?.stop()

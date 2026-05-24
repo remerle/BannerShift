@@ -1,6 +1,13 @@
 import AppKit
 import BannerShiftCore
 
+/// Watches for the notification UI process
+/// (`com.apple.notificationcenterui`) launching and terminating, so the
+/// AX observer can be attached to its pid and torn down when it exits.
+///
+/// That process can crash and relaunch independently of this app; the
+/// watcher is what lets BannerShift re-attach instead of going dead after
+/// the first restart. All callbacks are delivered on the main queue.
 final class NotificationUIWatcher {
   private let logger: FileLogger
   private let onUp: (pid_t) -> Void
@@ -17,6 +24,12 @@ final class NotificationUIWatcher {
     self.onDown = onDown
   }
 
+  /// Begin watching, firing `onUp` immediately if the notification UI
+  /// process is already running.
+  ///
+  /// `onUp(pid)` fires on launch (and once now for an already-running
+  /// process); `onDown` fires on termination. Not idempotent — calling
+  /// twice double-registers the observers.
   func start() {
     let nc = NSWorkspace.shared.notificationCenter
     observers.append(
@@ -53,6 +66,7 @@ final class NotificationUIWatcher {
     }
   }
 
+  /// Remove the workspace observers registered by `start()`.
   func stop() {
     let nc = NSWorkspace.shared.notificationCenter
     for observer in observers {

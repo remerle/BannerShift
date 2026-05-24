@@ -2,6 +2,13 @@ import ApplicationServices
 import BannerShiftCore
 import CoreGraphics
 
+/// Reads Accessibility attributes off `AXUIElement`s and locates the
+/// banner element inside a notification window.
+///
+/// Every accessor treats AX data as untrusted: a missing attribute or a
+/// type mismatch yields `nil` (or an empty array) rather than trapping,
+/// so a malformed tree from the notification UI process degrades to "no
+/// banner found" instead of crashing the agent.
 enum AXBannerFinder {
   /// Depth-first search for the first descendant of `window` whose
   /// AXSubrole is in `Constants.bannerSubroles`.
@@ -26,6 +33,8 @@ enum AXBannerFinder {
     return nil
   }
 
+  /// Combines the element's AX position and size into a frame, or `nil`
+  /// if either attribute is missing.
   static func frame(of element: AXUIElement) -> CGRect? {
     guard let pos = pointAttribute(element, kAXPositionAttribute as CFString),
       let size = sizeAttribute(element, kAXSizeAttribute as CFString)
@@ -35,12 +44,17 @@ enum AXBannerFinder {
 
   // MARK: AX attribute helpers
 
+  /// Copies a string-valued AX attribute, or `nil` if absent or not a string.
   static func stringAttribute(_ el: AXUIElement, _ attr: CFString) -> String? {
     var raw: AnyObject?
     guard AXUIElementCopyAttributeValue(el, attr, &raw) == .success else { return nil }
     return raw as? String
   }
 
+  /// Copies an AX attribute as an array of elements, or `[]` if absent or
+  /// not an element array.
+  ///
+  /// "Empty" and "missing" are intentionally indistinguishable to callers.
   static func arrayAttribute(_ el: AXUIElement, _ attr: CFString) -> [AXUIElement] {
     var raw: AnyObject?
     guard AXUIElementCopyAttributeValue(el, attr, &raw) == .success,
@@ -49,6 +63,8 @@ enum AXBannerFinder {
     return arr
   }
 
+  /// Extracts a `CGPoint`-valued AX attribute (e.g. `kAXPositionAttribute`),
+  /// unwrapping the `AXValue` box; `nil` if absent or not a point.
   static func pointAttribute(_ el: AXUIElement, _ attr: CFString) -> CGPoint? {
     var raw: AnyObject?
     guard AXUIElementCopyAttributeValue(el, attr, &raw) == .success,
@@ -69,6 +85,8 @@ enum AXBannerFinder {
     return point
   }
 
+  /// Extracts a `CGSize`-valued AX attribute (e.g. `kAXSizeAttribute`),
+  /// unwrapping the `AXValue` box; `nil` if absent or not a size.
   static func sizeAttribute(_ el: AXUIElement, _ attr: CFString) -> CGSize? {
     var raw: AnyObject?
     guard AXUIElementCopyAttributeValue(el, attr, &raw) == .success,

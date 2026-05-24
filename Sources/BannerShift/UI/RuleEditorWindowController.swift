@@ -2,6 +2,14 @@ import AppKit
 import BannerShiftCore
 import Foundation
 
+/// Window controller for the rules editor: a master/detail list of rules
+/// plus a live "test against sample text" pane.
+///
+/// Edits write straight back to the `RuleStore` on every change (there is
+/// no explicit Save button), and regex fields are validated against
+/// `RuleMatcher.compileForMatching` as you type so an invalid pattern is
+/// flagged before it can reach the matcher. Holds its own `RuleMatcher`
+/// solely to power the sample tester. AppKit, main-thread only.
 final class RuleEditorWindowController: NSWindowController {
   private let ruleStore: RuleStore
   private let matcher = RuleMatcher()
@@ -37,6 +45,11 @@ final class RuleEditorWindowController: NSWindowController {
   private let sampleBodyField = NSTextField()
   private let testResultLabel = NSTextField(labelWithString: "No rule matches.")
 
+  /// Create the editor window and load the current rules from the store.
+  ///
+  /// Builds the whole view hierarchy up front and retains the window
+  /// (`isReleasedWhenClosed = false`), so the controller survives the user
+  /// closing it and `show()` can reopen the same instance.
   init(ruleStore: RuleStore) {
     self.ruleStore = ruleStore
     let frame = NSRect(x: 0, y: 0, width: 760, height: 560)
@@ -57,6 +70,9 @@ final class RuleEditorWindowController: NSWindowController {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+  /// Bring the editor window to the front.
+  ///
+  /// The window itself is built at init, so this creates nothing.
   func show() {
     window?.makeKeyAndOrderFront(nil)
     NSApp.bringToFront()
@@ -384,12 +400,16 @@ final class RuleEditorWindowController: NSWindowController {
 extension RuleEditorWindowController: NSTableViewDataSource {
   func numberOfRows(in tableView: NSTableView) -> Int { rules.count }
 
+  /// Drag-to-reorder: make a row draggable, carrying its index as the
+  /// pasteboard payload.
   func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
     let item = NSPasteboardItem()
     item.setString("\(row)", forType: .string)
     return item
   }
 
+  /// Drag-to-reorder: allow the drop only as an insertion between rows
+  /// (`.above`), presented as a move.
   func tableView(
     _ tableView: NSTableView,
     validateDrop info: NSDraggingInfo,
@@ -399,6 +419,8 @@ extension RuleEditorWindowController: NSTableViewDataSource {
     dropOperation == .above ? .move : []
   }
 
+  /// Drag-to-reorder: move the dragged rule to the drop location, persist
+  /// the new order, and keep the moved rule selected.
   func tableView(
     _ tableView: NSTableView,
     acceptDrop info: NSDraggingInfo,
@@ -423,6 +445,8 @@ extension RuleEditorWindowController: NSTableViewDataSource {
 // MARK: NSTableViewDelegate
 
 extension RuleEditorWindowController: NSTableViewDelegate {
+  /// Build the cell view for a column: an enabled checkbox for "on", plain
+  /// labels for name/app, and a "position / animation" summary for "rule".
   func tableView(
     _ tableView: NSTableView,
     viewFor tableColumn: NSTableColumn?,
@@ -461,6 +485,10 @@ extension RuleEditorWindowController: NSTableViewDelegate {
 // MARK: NSTextFieldDelegate
 
 extension RuleEditorWindowController: NSTextFieldDelegate {
+  /// Live updates as the user types: re-run the sample tester for the
+  /// tester fields, or validate the regex for a detail field.
+  ///
+  /// Committing the edit to the rule is deferred to `controlTextDidEndEditing`.
   func controlTextDidChange(_ obj: Notification) {
     guard let field = obj.object as? NSTextField else { return }
     // Sample-tester fields update on every keystroke.
@@ -479,6 +507,7 @@ extension RuleEditorWindowController: NSTextFieldDelegate {
     }
   }
 
+  /// Commit edits to the selected rule when a detail field loses focus.
   func controlTextDidEndEditing(_ obj: Notification) {
     guard let field = obj.object as? NSTextField else { return }
     if [nameField, appField, bundleField, titleField, subtitleField, bodyField].contains(field) {

@@ -1,6 +1,12 @@
 import ApplicationServices
 import Foundation
 
+/// Gate for the Accessibility permission that BannerShift cannot operate
+/// without.
+///
+/// A namespace around the one trust check the app makes at launch; see
+/// `isTrustedOrPrompt()` for the prompt side effect and the fail-fast
+/// contract callers must honor.
 enum AccessibilityPermission {
   /// Returns true iff the process is trusted to use the Accessibility API.
   ///

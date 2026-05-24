@@ -3,6 +3,13 @@ import BannerShiftCore
 import CoreGraphics
 import Foundation
 
+/// Reads the visible text of a banner out of its Accessibility subtree
+/// and packs it into a `BannerText` for rule matching.
+///
+/// This is the executable-side counterpart to Core's `RuleMatcher`: it
+/// turns the live AX tree into the plain value type the matcher consumes.
+/// Treat its output as sensitive — it is the full visible text of the
+/// user's notification and must not be logged outside debug mode.
 enum BannerTextExtractor {
   /// Build a banner-text snapshot from the AX subtree rooted at `banner`.
   ///
