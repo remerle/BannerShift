@@ -51,6 +51,15 @@ make release        # signed, notarized, stapled release build (requires `make s
 
 Always run `make validate` before declaring work complete on a change that touches `Sources/` or `Tests/`. Run `make analyze` periodically (not on every change) to catch dead code and unused imports.
 
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/) and is the human-facing record of what shipped. Keep it current as part of the change, not as an afterthought:
+
+- Any user-visible change (new feature, behavior change, bugfix a user would notice, removal) gets an entry under the `## [Unreleased]` heading, in the appropriate group (`Added` / `Changed` / `Fixed` / `Removed` / `Deprecated` / `Security`). Add the entry in the same PR as the change.
+- Internal-only changes (refactors, test-only changes, lint fixes, doc-comment edits, CI tweaks) do **not** need a changelog entry. When in doubt, ask "would a user or downstream installer care?" — if no, skip it.
+- Do not invent version numbers or release dates. The git tag is the version source of truth (see the GitHub Actions section); releasing is what promotes `Unreleased` to a versioned, dated section. Only move entries out of `Unreleased` when cutting a release tag.
+- Write entries from the user's perspective, not the implementation's: "Banners now respect the Dock height on the bottom row," not "Added dockPadding constant."
+
 ## Swift conventions
 
 Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code over inventing new patterns.
