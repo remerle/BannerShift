@@ -1,151 +1,114 @@
 # BannerShift
 
-A macOS background utility that repositions native notification banners to a user-chosen location on the screen.
+**Move macOS notification banners wherever you want them.**
 
-The system normally posts every banner at the top-right corner. BannerShift lets you pick any of nine positions arranged in a 3x3 grid and ensures every banner the OS posts is repositioned there for as long as the banner is visible. It does not render its own banners, does not subclass or inject anything into other processes, and reads no notification content except to evaluate user-defined matching rules (and even then, only in memory; never to disk unless you turn on debug logging).
+[![Platform: macOS 13+](https://img.shields.io/badge/platform-macOS%2013%2B-blue)](https://www.apple.com/macos/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## What it does
+macOS always drops notification banners in the top-right corner. BannerShift
+quietly repositions every banner to a spot **you** choose — any of nine positions
+on a 3x3 grid — and keeps it there for as long as it's on screen. It runs in the
+background with no Dock icon, just a small menu-bar control.
 
-- Repositions every notification banner to one of nine grid cells: corners, edge midpoints, or screen center.
-- Optional per-notification rules: match by app name, bundle ID, title, subtitle, or body (Swift `Regex`, case-insensitive). Each rule can override the global position and pick an animation style (`none`, `slide`, `shake`, `bounce`).
-- Runs as a per-user background agent (`LSUIElement=true`). No Dock icon, no main window. Optional menu-bar icon for the position picker, rules editor, test notification, launch-at-login toggle, and about/quit.
-- Single process, single user, no network, no telemetry. Requires only Accessibility permission.
+## Features
 
-## Install (dev build)
+- **Pick where banners appear** — corners, edge midpoints, or dead center.
+- **Per-app and per-notification rules** — send Slack to the bottom-left, calendar
+  alerts to the top-middle, and so on. Match on app name, title, subtitle, or body.
+- **Optional entrance animations** — none, slide, shake, or bounce, set globally
+  or per rule.
+- **Multi-display aware** — each banner is moved on the screen it belongs to.
+- **Stays out of your way** — no Dock icon, no window, no network, no telemetry.
+  Just a menu-bar bell you can even hide.
 
-Until a notarized release is published, build locally:
+## Requirements
+
+- macOS 13 (Ventura) or newer.
+- **Accessibility permission**, which macOS will prompt for on first launch.
+  BannerShift needs it to see and move banner windows; it won't run without it.
+
+## Install
+
+### Download a release
+
+Grab the latest notarized build from the
+[**Releases**](https://github.com/remerle/BannerShift/releases) page, unzip or
+mount it, and drag **BannerShift** to your Applications folder.
+
+### Or build it yourself
+
+If there's no release for your needs, you can build from source with a Swift
+toolchain:
 
 ```bash
-make build         # incremental SwiftPM build
-./scripts/build-dev.sh   # universal (arm64 + x86_64), ad-hoc signed, packaged as build/BannerShift.app
-open build/BannerShift.app
+git clone https://github.com/remerle/BannerShift.git
+cd BannerShift
+make run     # builds a universal app and launches it
 ```
 
-On first launch, macOS will prompt for Accessibility permission. Grant it in System Settings, then relaunch BannerShift. The app intentionally terminates on a denied permission rather than running in a degraded mode.
+See [DEVELOPERS.md](DEVELOPERS.md) for the full toolchain setup.
 
-## Use
+## First launch
+
+When you open BannerShift the first time, macOS will ask for **Accessibility**
+permission. Grant it in **System Settings → Privacy & Security → Accessibility**,
+then relaunch BannerShift. If you decline, the app closes — it has no half-working
+mode without that permission.
+
+A bell icon then appears in your menu bar. That's the whole interface.
+
+## Using BannerShift
 
 Click the bell icon in the menu bar:
 
-- **Rules...** opens the rule editor (table of rules + per-rule detail pane + sample-text tester).
-- **Default Position** lists the nine positions; the current one is checked. Pick a different one to take effect immediately.
-- **Send a Test Notification** posts a real banner so you can confirm placement.
-- **Launch at Login** is a three-state toggle: not registered, enabled, requires approval.
-- **Hide Menu Bar Icon...** removes the icon (the app keeps running). Relaunch BannerShift to bring it back.
-- **About BannerShift** shows the version and copyright.
+- **Default Position** — lists the nine positions with the current one checked.
+  Pick another and it applies to the next banner immediately.
+- **Rules…** — opens the rules editor. Add a rule, give it a name, and set one or
+  more patterns (app name, title, subtitle, body) to match. Each rule can send
+  matching banners to its own position with its own animation. There's a
+  sample-text box to test a rule before saving it. Rules are checked top to
+  bottom; the first match wins.
+- **Send a Test Notification** — posts a real banner so you can confirm placement.
+- **Launch at Login** — toggles whether BannerShift starts automatically. If macOS
+  needs you to approve it, the menu will say so and can open the right Settings
+  pane.
+- **Hide Menu Bar Icon…** — removes the bell (the app keeps running). Relaunch
+  BannerShift to bring it back.
+- **About BannerShift** — shows the version.
 
-## Develop
+For the exact position names, animation styles, and where settings are stored,
+see [docs/configuration.md](docs/configuration.md).
 
-```bash
-make help          # list every target
-make build         # debug build
-make test          # Swift Testing suite covering BannerShiftCore
-make format        # apply swift-format
-make lint          # swift-format check + SwiftLint (no rewrites)
-make format-check  # alias for `make lint`
-make analyze       # slow: SwiftLint analyzer rules (run periodically, not in validate)
-make validate      # lint + build + test (CI gate)
-make dev           # universal ad-hoc-signed .app at build/BannerShift.app
-make run           # build + open the .app
-make clean         # remove .build and build
-make tail-log      # tail ~/Library/Logs/BannerShift.log
-```
+## Privacy & security
 
-The project is split between two SwiftPM targets:
+BannerShift reads notification text (app, title, subtitle, body) **only** to
+evaluate your rules, and only in memory. It writes **no** notification content to
+disk unless you explicitly turn on debug logging (off by default), makes **no**
+network connections, and injects nothing into other apps. Released builds are
+signed and notarized by Apple. Full details are in [SECURITY.md](SECURITY.md).
 
-- `BannerShiftCore` (library, in `Sources/BannerShiftCore/`): pure value types and pure logic. Fully unit-tested, no system-API dependencies.
-- `BannerShift` (executable, in `Sources/BannerShift/`): AppKit + Accessibility integration. Verified via a manual smoke pass against real macOS notifications.
+## Troubleshooting
 
-Tests live under `Tests/BannerShiftCoreTests/` using Swift Testing (`@Test`, `#expect`). Run with `make test`.
+- **Banners aren't moving.** Confirm Accessibility permission is granted in
+  System Settings → Privacy & Security → Accessibility, and that BannerShift is
+  running (look for the menu-bar bell). Toggling the permission off and on, then
+  relaunching, clears most issues.
+- **A rule isn't matching.** Open **Rules…** and use the sample-text tester.
+  Patterns are case-insensitive regular expressions and a rule matches only when
+  *all* its filled-in fields match.
+- **After a macOS upgrade, nothing works.** BannerShift relies on a few
+  undocumented macOS internals that Apple occasionally changes between major
+  releases. Please [open an issue](https://github.com/remerle/BannerShift/issues)
+  with your macOS version.
 
-## Release (signed + notarized)
+To capture a diagnostic log, see [docs/configuration.md](docs/configuration.md#logging).
 
-Two paths: drive the pipeline locally from your dev machine, or push a tag and let GitHub Actions do the work.
+## Contributing & development
 
-### Locally (via 1Password)
-
-```bash
-./populate-secrets.sh --import-certs   # first time on this machine
-./populate-secrets.sh                  # subsequent runs
-./release.sh
-```
-
-Prerequisites:
-
-1. A 1Password vault containing an item for the App Store Connect API key with these fields:
-   - the `.p8` file as an attachment (e.g. `AuthKey_XXXXXXXXXX.p8`)
-   - `key id` (text) → the 10-character key ID from App Store Connect → Users and Access → Integrations → API Keys
-   - `issuer id` (text) → the issuer UUID from the same screen
-   - `key filename` (text) → the exact filename of the attached `.p8` (e.g. `AuthKey_XXXXXXXXXX.p8`). This is read at runtime so the key ID never appears in the script.
-2. A 1Password item for the Developer ID Application certificate (and one for the Installer cert if needed for `--import-certs`).
-3. Edit `populate-secrets.sh` and replace the placeholders with your values:
-   - `VAULT` → your 1Password vault ID.
-   - `APP_CERT_ITEM` → your 1Password item ID for the Developer ID Application cert.
-   - `INSTALLER_CERT_ITEM` → your 1Password item ID for the Developer ID Installer cert.
-   - `ASC_ITEM` → your 1Password item ID for the App Store Connect API key.
-4. Run `op signin` if you are not already signed in to the 1Password CLI.
-
-`populate-secrets.sh` writes a gitignored `.env` and `.secrets/AuthKey.p8` (mode 0600). `release.sh` consumes them, builds, signs with the Developer ID identity, notarizes via `xcrun notarytool`, staples, and packages as `build/BannerShift-<version>.tar.gz`.
-
-### Via GitHub Actions
-
-`.github/workflows/release.yml` runs the same pipeline on a `macos-14` runner when you push a version tag. Output is a draft GitHub release with both a notarized `.zip` and a notarized `.dmg`, plus a SHA-256 checksum file.
-
-**How to release:**
-
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-
-Then visit the Actions tab, approve the `release-signing` environment when prompted, and the workflow signs, notarizes, and creates a draft release. Edit the notes and publish from the GitHub UI.
-
-**One-time GitHub configuration (`Settings`):**
-
-1. Create environment `release-signing` (`Settings > Environments > New environment`).
-2. Add **Required reviewers** (yourself). This is the manual approval gate. Secrets only mount after a reviewer approves.
-3. Add the following **environment secrets** (scoped to `release-signing`, not repo-wide):
-
-| Secret | Value | How to obtain |
-|---|---|---|
-| `DEVELOPER_ID_APPLICATION_P12_BASE64` | base64 of your Developer ID Application cert exported as `.p12` | `security export -k ~/Library/Keychains/login.keychain-db -t identities -f pkcs12 -P "<password>" -o cert.p12 && base64 -i cert.p12 \| pbcopy` |
-| `DEVELOPER_ID_APPLICATION_P12_PASSWORD` | the password you set when exporting the `.p12` | (you choose it at export time) |
-| `DEVELOPER_ID_APPLICATION_IDENTITY` | full signing identity string | `security find-identity -v -p codesigning \| grep "Developer ID Application"` → use the quoted name, e.g. `Developer ID Application: Your Name (TEAMID12)` |
-| `AC_API_KEY_BASE64` | base64 of your App Store Connect API key `.p8` | `base64 -i AuthKey_XXXXXXXXXX.p8 \| pbcopy` |
-| `AC_API_KEY_ID` | the 10-character key ID | App Store Connect → Users and Access → Integrations → API Keys |
-| `AC_API_ISSUER_ID` | the issuer UUID | same screen as above (top of the page) |
-
-**Security posture:**
-
-- The `.p12` is the highest-value secret you will ever set on this repo. Compromise lets an attacker sign macOS malware as you until Apple revokes (24-48 hour window).
-- All secrets are scoped to the `release-signing` environment, not repo-wide. A workflow file added by a malicious PR cannot read them.
-- The workflow creates an ephemeral keychain with a random password, imports the cert, then deletes the keychain on cleanup. No persistent state on the runner.
-- Third-party actions are first-party only (`actions/checkout`, `actions/cache`, `actions/upload-artifact`, `actions/download-artifact`). Zero marketplace actions in the signing path.
-- The version is sourced from the git tag (`refs/tags/v1.2.3`) and injected into `Info.plist` at build time; no version string in the repo to keep in sync.
-
-## Project layout
-
-```
-.
-├── Makefile                      # build/test/format/validate driver
-├── Package.swift                 # SwiftPM manifest (macOS 13+, swift-testing dep)
-├── populate-secrets.sh           # 1Password -> .env materializer
-├── release.sh                    # Developer ID sign + notarize + staple + package
-├── Resources/
-│   ├── Info.plist                # LSUIElement, AX usage description, bundle metadata
-│   └── BannerShift.entitlements
-├── Sources/
-│   ├── BannerShiftCore/          # pure logic + value types (unit-tested)
-│   └── BannerShift/              # AppKit + AX integration (executable)
-├── Tests/BannerShiftCoreTests/   # Swift Testing, 75 tests
-└── scripts/
-    └── build-dev.sh              # universal binary, ad-hoc signed
-```
-
-## Constraints and known fragilities
-
-BannerShift depends on a small number of undocumented macOS behaviors (banner accessibility subroles, the Notification Center panel identifier, the full-screen container window invariant). When Apple changes any of these across a major macOS release, the corresponding constants in `Sources/BannerShiftCore/Constants.swift` need updating; the doc comments on each constant identify what it represents and how it can break.
+Issues and pull requests are welcome — it's a personal project, so responses
+aren't on a schedule, but well-scoped contributions are appreciated. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md) and [DEVELOPERS.md](DEVELOPERS.md).
 
 ## License
 
-Copyright 2026 Ryan Emerle. All rights reserved.
+[MIT](LICENSE) © 2026 Ryan Emerle.
