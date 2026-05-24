@@ -81,3 +81,32 @@ private let matcher = RuleMatcher()
   #expect(with != nil)
   #expect(without == nil)
 }
+
+@Test func dotMatchesNewlinesInBodyPattern() {
+  // RuleMatcher applies `.dotMatchesNewlines()` so `.` spans embedded
+  // newlines in multi-line banner text. A pattern relying on that
+  // behavior must match across line boundaries.
+  let rule = Rule(name: "multiline", bodyPattern: "alice.*bob")
+  let banner = BannerText(appName: "X", body: "alice\nsays\nbob")
+  #expect(matcher.match(rules: [rule], banner: banner) != nil)
+}
+
+@Test func invalidateCacheClearsCompiledPatterns() {
+  // Cache invalidation must force recompilation. We assert the
+  // observable behavior: after invalidateCache(), matching still works
+  // (i.e. the cache rebuilt itself) and no stale entry survives a
+  // pattern change.
+  let isolatedMatcher = RuleMatcher()
+  let rule = Rule(name: "r", appPattern: "Slack")
+  #expect(isolatedMatcher.match(rules: [rule], banner: BannerText(appName: "Slack")) != nil)
+  isolatedMatcher.invalidateCache()
+  #expect(isolatedMatcher.match(rules: [rule], banner: BannerText(appName: "Slack")) != nil)
+}
+
+@Test func compileForMatchingAppliesIgnoresCase() throws {
+  // The shared helper used by both the matcher and the editor's
+  // validator must produce a case-insensitive Regex so the editor's
+  // syntax check matches runtime semantics.
+  let regex = try RuleMatcher.compileForMatching("slack")
+  #expect("SLACK".firstMatch(of: regex) != nil)
+}

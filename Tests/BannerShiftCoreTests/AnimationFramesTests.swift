@@ -58,6 +58,21 @@ private let to = CGPoint(x: 100, y: 50)
   #expect(xs.count > 1)
 }
 
+@Test func oscillateSettleFrameIsIntegerSnappedForFractionalCenter() {
+  // The oscillate path appends an explicit settle frame at `center`.
+  // Pre-fix, that frame used the raw center even when the runtime
+  // value carried a fractional component, breaking the
+  // "every frame is integer-snapped" contract. Cover the case
+  // explicitly with a fractional `to`.
+  let fractionalTo = CGPoint(x: 100.5, y: 50.5)
+  for style in [Animation.shake, Animation.bounce] {
+    let frames = AnimationFrames.frames(style: style, from: .zero, to: fractionalTo)
+    let last = frames.last
+    #expect(last?.point.x == last?.point.x.rounded())
+    #expect(last?.point.y == last?.point.y.rounded())
+  }
+}
+
 @Test func everyFrameLandsOnIntegerPoints() {
   // Image-fidelity guard: every animation frame must emit an integer-point
   // target so the banner renders crisp throughout the animation, not just

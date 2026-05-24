@@ -57,8 +57,35 @@ public struct PositionCalculator {
   /// must check it before trusting `targetOrigin(for:)`. Violations
   /// are typically caused by a macOS update changing the notification
   /// UI's window layout.
+  ///
+  /// The comparison uses a sub-pixel tolerance because AX-sourced and
+  /// NSScreen-sourced heights flow through different conversions and
+  /// can diverge by floating-point noise smaller than a logical pixel.
+  /// `1.0` is large enough to absorb that noise and small enough to
+  /// still catch every structural violation we have ever seen
+  /// (typically a multi-hundred-point delta).
   public var invariantHolds: Bool {
-    windowFrame.size.height == screen.frame.size.height
+    guard abs(windowFrame.size.height - screen.frame.size.height) < 1.0
+    else { return false }
+    // Also reject degenerate visible-frame geometry that would produce
+    // NaN/Inf or visually wrong positions for middle/bottom rows. A
+    // zero-height visible area can occur transiently during display
+    // reconfiguration; bail out rather than emit nonsense coordinates.
+    guard screen.visibleFrame.size.height > 0,
+      screen.visibleFrame.size.width > 0
+    else { return false }
+    // Sanity-check that the banner sits inside the window. AX data is
+    // external OS state; an out-of-bounds banner frame would project
+    // the window origin far off-screen (e.g. a banner with minX =
+    // -10000 yields a windowOrigin of +10000). The bannerFrame is in
+    // window-relative coordinates so the expected range is
+    // 0...windowFrame.width / 0...windowFrame.height.
+    guard bannerFrame.minX >= 0,
+      bannerFrame.minY >= 0,
+      bannerFrame.maxX <= windowFrame.width + 1.0,
+      bannerFrame.maxY <= windowFrame.height + 1.0
+    else { return false }
+    return true
   }
 
   /// Computes the integer-snapped target window origin (AX coordinates,

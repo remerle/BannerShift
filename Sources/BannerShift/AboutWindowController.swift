@@ -6,7 +6,7 @@ final class AboutWindowController {
   func show() {
     if let window {
       window.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
+      NSApp.bringToFront()
       return
     }
 
@@ -56,7 +56,7 @@ final class AboutWindowController {
     aboutWindow.contentView = content
     window = aboutWindow
     aboutWindow.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.bringToFront()
   }
 
   private func label(_ text: String, weight: NSFont.Weight, size: CGFloat) -> NSTextField {

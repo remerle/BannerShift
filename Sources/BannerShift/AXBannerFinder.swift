@@ -5,15 +5,23 @@ import CoreGraphics
 enum AXBannerFinder {
   /// Depth-first search for the first descendant of `window` whose
   /// AXSubrole is in `Constants.bannerSubroles`.
+  ///
+  /// Capped at `Constants.maxAXRecursionDepth` to bound the main-thread
+  /// stack against a pathological AX tree from the OS process.
   static func find(in window: AXUIElement) -> AXUIElement? {
+    find(in: window, depth: 0)
+  }
+
+  private static func find(in window: AXUIElement, depth: Int) -> AXUIElement? {
     if let subrole = stringAttribute(window, kAXSubroleAttribute as CFString),
       Constants.bannerSubroles.contains(subrole)
     {
       return window
     }
+    guard depth < Constants.maxAXRecursionDepth else { return nil }
     let children = arrayAttribute(window, kAXChildrenAttribute as CFString)
     for child in children {
-      if let hit = find(in: child) { return hit }
+      if let hit = find(in: child, depth: depth + 1) { return hit }
     }
     return nil
   }

@@ -28,13 +28,20 @@ enum TestNotification {
     }
   }
 
+  // Stable identifier so repeated "Send a Test Notification" invocations
+  // replace the prior delivery in Notification Center rather than
+  // accumulating distinct entries the user has to dismiss one by one.
+  private static let identifier = "\(Constants.bundleIdentifier).test"
+
   private static func post(positionName: String) {
     let content = UNMutableNotificationContent()
     content.title = "BannerShift"
     content.subtitle = positionName
     content.body = "If you can see this in the chosen position, it's working."
-    let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-    UNUserNotificationCenter.current().add(req, withCompletionHandler: nil)
+    let center = UNUserNotificationCenter.current()
+    center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
+    center.add(req, withCompletionHandler: nil)
   }
 
   private static func showDeniedAlert() {

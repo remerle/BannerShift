@@ -62,7 +62,13 @@ public final class RuleStore {
   /// Encode `rules` and write the blob to defaults.
   ///
   /// Updates the cache so a subsequent `load()` returns the same list
-  /// without re-decoding. Encoding failures are logged but not thrown.
+  /// without re-decoding. Encoding failures are logged but not thrown,
+  /// and on encode failure the cache is **not** updated — `load()` will
+  /// continue to return the previously-cached rules until a subsequent
+  /// `save(_:)` succeeds. In practice `Rule` is a flat value type with
+  /// only `String`/`Bool`/`Optional` fields so `JSONEncoder` cannot
+  /// fail; the explicit semantics here matter only for future
+  /// non-trivially-encodable additions to `Rule`.
   public func save(_ rules: [Rule]) {
     do {
       let data = try encoder.encode(rules)

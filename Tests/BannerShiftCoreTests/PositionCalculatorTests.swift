@@ -30,8 +30,12 @@ private func makeCalc(
 }
 
 @Test func topRightLeavesOriginUntouched() {
+  // Semantic assertion: .topRight returns the OS-placed window origin
+  // unchanged. The fixture's windowFrame happens to start at .zero but
+  // the contract is "preserve windowFrame.origin", not "return zero".
   let origin = makeCalc().targetOrigin(for: .topRight)
-  #expect(origin == .zero)
+  #expect(origin.x == windowFrame.origin.x)
+  #expect(origin.y == windowFrame.origin.y)
 }
 
 @Test func topLeftShiftsWindowLeftByBannerOffset() {
@@ -134,6 +138,58 @@ private func makeCalc(
       }
     }
   }
+}
+
+@Test func middleLeftAndMiddleRightCenterVertically() {
+  // .middleLeft / .middleRight share the y math with .middle (vertical
+  // = .middle), so y must equal middle's y. x must match topLeft for
+  // middleLeft and topRight for middleRight.
+  let calc = makeCalc()
+  let middleY = calc.targetOrigin(for: .middle).y
+  let left = calc.targetOrigin(for: .middleLeft)
+  let right = calc.targetOrigin(for: .middleRight)
+  #expect(left.x == calc.targetOrigin(for: .topLeft).x)
+  #expect(left.y == middleY)
+  #expect(right.x == calc.targetOrigin(for: .topRight).x)
+  #expect(right.y == middleY)
+}
+
+@Test func bottomLeftAndBottomMiddleShareBottomY() {
+  // .bottomLeft / .bottomMiddle share the y math with .bottomRight.
+  let calc = makeCalc()
+  let bottomY = calc.targetOrigin(for: .bottomRight).y
+  let bottomLeft = calc.targetOrigin(for: .bottomLeft)
+  let bottomMiddle = calc.targetOrigin(for: .bottomMiddle)
+  #expect(bottomLeft.x == calc.targetOrigin(for: .topLeft).x)
+  #expect(bottomLeft.y == bottomY)
+  #expect(bottomMiddle.x == calc.targetOrigin(for: .topMiddle).x)
+  #expect(bottomMiddle.y == bottomY)
+}
+
+@Test func degenerateVisibleFrameFailsInvariant() {
+  // A degenerate (zero-height) visible frame can occur transiently
+  // during display reconfiguration. The calculator must refuse to
+  // produce coordinates from such a snapshot.
+  let degenerate = ScreenInfo(
+    frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+    visibleFrame: CGRect(x: 0, y: 0, width: 1920, height: 0),
+    isPrimary: true
+  )
+  let calc = makeCalc(screen: degenerate)
+  #expect(calc.invariantHolds == false)
+}
+
+@Test func invariantAbsorbsSubPixelFloatNoise() {
+  // AX and NSScreen heights flow through different conversions and can
+  // diverge by floating-point noise smaller than a logical pixel. The
+  // invariant tolerates such drift; only structural mismatches abort.
+  let driftScreen = ScreenInfo(
+    frame: CGRect(x: 0, y: 0, width: 1920, height: 1080.0001),
+    visibleFrame: CGRect(x: 0, y: 25, width: 1920, height: 1055),
+    isPrimary: true
+  )
+  let calc = makeCalc(screen: driftScreen)
+  #expect(calc.invariantHolds == true)
 }
 
 @Test func multiMonitorUsesPrimaryHeightAsAXFlipPivot() {

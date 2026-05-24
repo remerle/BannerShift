@@ -4,8 +4,11 @@ import Foundation
 /// metadata plus an override position and animation to apply on match.
 ///
 /// All pattern fields are optional and combined with logical AND; a nil
-/// or empty pattern field is treated as "match anything." Patterns are
-/// applied case-insensitively at match time (see `RuleMatcher`).
+/// or empty pattern field is treated as "match anything." At match time
+/// `RuleMatcher` compiles every pattern with `ignoresCase` and
+/// `dotMatchesNewlines` applied, so:
+/// - matching is always case-insensitive (inline `(?-i)` is overridden);
+/// - `.` matches embedded newlines in multi-line body text.
 /// `position` and `animation` are optional so the editor can leave them
 /// nil to mean "keep the default."
 public struct Rule: Equatable, Sendable, Codable, Identifiable {

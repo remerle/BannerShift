@@ -91,6 +91,18 @@ public final class RuleMatcher {
     regexCache.removeAll()
   }
 
+  /// Compile `pattern` with the exact option set the matcher applies at
+  /// runtime (`ignoresCase` + `dotMatchesNewlines`).
+  ///
+  /// Provided so the rule editor's syntax validator and any future
+  /// match-equivalence test can compile against the same semantics the
+  /// matcher uses. A bare `Regex(pattern)` reports a pattern as
+  /// "valid" without revealing that inline `(?-i)` will be silently
+  /// overridden or that `.` will span newlines at runtime.
+  public static func compileForMatching(_ pattern: String) throws -> Regex<AnyRegexOutput> {
+    try Regex(pattern).ignoresCase().dotMatchesNewlines()
+  }
+
   private func matches(_ rule: Rule, _ banner: BannerText) throws -> Bool {
     try check(rule.appPattern, banner.appName)
       && check(rule.bundleIDPattern, banner.bundleID ?? "")
@@ -102,7 +114,16 @@ public final class RuleMatcher {
   private func check(_ pattern: String?, _ subject: String) throws -> Bool {
     guard let pattern, !pattern.isEmpty else { return true }
     let regex = try compiledRegex(for: pattern)
-    return subject.firstMatch(of: regex) != nil
+    // Cap the subject length so a pathological-length banner field
+    // cannot turn a backtracking-heavy user pattern into a main-thread
+    // stall. Real banner text is well under this cap; the truncation
+    // is a defense-in-depth measure against malformed or adversarial
+    // AX content.
+    let bounded =
+      subject.count > Constants.maxBannerMatchSubjectLength
+      ? String(subject.prefix(Constants.maxBannerMatchSubjectLength))
+      : subject
+    return bounded.firstMatch(of: regex) != nil
   }
 
   /// Compile-or-fetch a regex for `pattern`.
@@ -118,7 +139,7 @@ public final class RuleMatcher {
     }
     cacheLock.unlock()
 
-    let compiled = try Regex(pattern).ignoresCase().dotMatchesNewlines()
+    let compiled = try Self.compileForMatching(pattern)
 
     cacheLock.lock()
     defer { cacheLock.unlock() }

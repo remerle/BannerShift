@@ -31,6 +31,7 @@ final class RuleEditorWindowController: NSWindowController {
 
   // Sample tester
   private let sampleAppField = NSTextField()
+  private let sampleBundleField = NSTextField()
   private let sampleTitleField = NSTextField()
   private let sampleSubtitleField = NSTextField()
   private let sampleBodyField = NSTextField()
@@ -58,7 +59,7 @@ final class RuleEditorWindowController: NSWindowController {
 
   func show() {
     window?.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.bringToFront()
   }
 
   // MARK: UI
@@ -198,16 +199,18 @@ final class RuleEditorWindowController: NSWindowController {
   private func makeTester() -> NSView {
     let header = NSTextField(labelWithString: "Test against sample text:")
     header.font = .boldSystemFont(ofSize: 12)
-    for tf in [sampleAppField, sampleTitleField, sampleSubtitleField, sampleBodyField] {
+    let fields = [
+      sampleAppField, sampleBundleField, sampleTitleField, sampleSubtitleField, sampleBodyField,
+    ]
+    for tf in fields {
       tf.delegate = self
     }
     sampleAppField.placeholderString = "App"
+    sampleBundleField.placeholderString = "Bundle ID"
     sampleTitleField.placeholderString = "Title"
     sampleSubtitleField.placeholderString = "Subtitle"
     sampleBodyField.placeholderString = "Body"
-    let inputs = NSStackView(views: [
-      sampleAppField, sampleTitleField, sampleSubtitleField, sampleBodyField,
-    ])
+    let inputs = NSStackView(views: fields)
     inputs.orientation = .horizontal
     inputs.distribution = .fillEqually
     inputs.spacing = 6
@@ -332,7 +335,10 @@ final class RuleEditorWindowController: NSWindowController {
       return
     }
     do {
-      _ = try Regex(pattern)
+      // Compile with the same option set the runtime matcher applies so
+      // a pattern that would behave differently at runtime than under a
+      // bare `Regex(pattern)` is caught by the editor's validator.
+      _ = try RuleMatcher.compileForMatching(pattern)
       field.layer?.borderWidth = 0
       err.stringValue = ""
     } catch {
@@ -358,6 +364,7 @@ final class RuleEditorWindowController: NSWindowController {
   @objc private func updateTestResult() {
     let banner = BannerText(
       appName: sampleAppField.stringValue,
+      bundleID: nilIfEmpty(sampleBundleField.stringValue),
       title: sampleTitleField.stringValue,
       subtitle: sampleSubtitleField.stringValue,
       body: sampleBodyField.stringValue
@@ -400,7 +407,8 @@ extension RuleEditorWindowController: NSTableViewDataSource {
   ) -> Bool {
     guard let item = info.draggingPasteboard.pasteboardItems?.first,
       let payload = item.string(forType: .string),
-      let src = Int(payload)
+      let src = Int(payload),
+      rules.indices.contains(src)
     else { return false }
     let dst = src < row ? row - 1 : row
     let moved = rules.remove(at: src)

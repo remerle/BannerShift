@@ -22,7 +22,7 @@ enum BannerTextExtractor {
   /// real-world AX-tree shapes are observed across macOS versions.
   static func extract(from banner: AXUIElement) -> BannerText {
     var pairs: [(y: CGFloat, text: String)] = []
-    collect(from: banner, into: &pairs)
+    collect(from: banner, into: &pairs, depth: 0)
     let ordered = pairs.sorted(by: { $0.y < $1.y }).map(\.text)
     switch ordered.count {
     case 0:
@@ -40,6 +40,13 @@ enum BannerTextExtractor {
         appName: ordered[0], bundleID: nil, title: ordered[1], subtitle: "", body: ordered[2])
 
     default:
+      // Five or more text elements: macOS has historically capped banners
+      // at four (app / title / subtitle / body). If a future OS revision
+      // adds a fifth element (e.g. action button label, secondary body),
+      // it lands here and is silently dropped — the assignment below
+      // takes only ordered[0..<4]. When that happens, extend the switch
+      // with a new case for the higher count rather than reshaping the
+      // existing branches.
       return BannerText(
         appName: ordered[0], bundleID: nil,
         title: ordered[1], subtitle: ordered[2], body: ordered[3])
@@ -48,7 +55,8 @@ enum BannerTextExtractor {
 
   private static func collect(
     from el: AXUIElement,
-    into out: inout [(y: CGFloat, text: String)]
+    into out: inout [(y: CGFloat, text: String)],
+    depth: Int
   ) {
     // One string per element: prefer AXValue, then AXTitle, then AXDescription.
     let text: String? =
@@ -59,8 +67,9 @@ enum BannerTextExtractor {
       let y = AXBannerFinder.pointAttribute(el, kAXPositionAttribute as CFString)?.y ?? .infinity
       out.append((y, text))
     }
+    guard depth < Constants.maxAXRecursionDepth else { return }
     for child in AXBannerFinder.arrayAttribute(el, kAXChildrenAttribute as CFString) {
-      collect(from: child, into: &out)
+      collect(from: child, into: &out, depth: depth + 1)
     }
   }
 }

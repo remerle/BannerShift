@@ -1,11 +1,12 @@
 import Foundation
+import OSLog
 
 // `BannerShiftCore` is otherwise free of system-API dependencies, but
 // `FileLogger` is the deliberate exception: it lives here so the rest of Core
 // (Preferences, RuleStore, etc.) can use it without creating a circular
-// dependency through the executable target. The Foundation imports below are
-// intentional and limited to file I/O; the "no system-API deps" convention
-// refers to AppKit/AX APIs specifically, not Foundation.
+// dependency through the executable target. The Foundation and OSLog imports
+// below are intentional and limited to file I/O plus a system-log fallback;
+// the "no system-API deps" convention refers to AppKit/AX APIs specifically.
 
 /// Append-only file logger.
 ///
@@ -37,6 +38,10 @@ public final class FileLogger {
   private let isDebugEnabled: () -> Bool
   private let formatter: ISO8601DateFormatter
   private let queue = DispatchQueue(label: "BannerShift.FileLogger")
+  // System-log fallback for when file writes fail (disk full, EPERM after
+  // permission revocation, etc.). Without this, every diagnostic after a
+  // startup-time failure would silently disappear.
+  private let osLog = Logger(subsystem: Constants.bundleIdentifier, category: "filelogger")
   /// Set to `true` inside `close()` under the `queue.sync` barrier.
   ///
   /// Read only inside the serial-queue closure in `write(_:_:)`, so no
@@ -99,9 +104,9 @@ public final class FileLogger {
 
   /// Drain pending writes and close the file handle.
   ///
-  /// Safe to call once. After this returns, subsequent
-  /// `info`/`debug`/`error` calls are an explicit no-op (rather than a
-  /// silent failed write to a closed handle).
+  /// Idempotent: a second call is a silent no-op. After this returns,
+  /// subsequent `info`/`debug`/`error` calls are an explicit no-op
+  /// (rather than a silent failed write to a closed handle).
   public func close() {
     queue.sync {
       self.closed = true
@@ -113,8 +118,17 @@ public final class FileLogger {
     let line = "[\(level.rawValue)] \(formatter.string(from: Date())) \(message)\n"
     queue.async {
       guard !self.closed else { return }
-      if let data = line.data(using: .utf8) {
-        try? self.handle.write(contentsOf: data)
+      guard let data = line.data(using: .utf8) else { return }
+      do {
+        try self.handle.write(contentsOf: data)
+      } catch {
+        // Fall back to os_log so the app stays observable when the file
+        // handle is broken. The fallback is intentionally one-shot per
+        // write — we do not stop attempting future file writes because
+        // the failure may be transient (e.g. brief disk pressure).
+        self.osLog.error(
+          "FileLogger: write failed (\(error.localizedDescription, privacy: .public)); message: \(message, privacy: .public)"
+        )
       }
     }
   }

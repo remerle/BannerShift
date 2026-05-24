@@ -109,8 +109,15 @@ public enum AnimationFrames {
       )
       out.append(Frame(timeOffset: progress * duration, point: point))
     }
-    if out.last?.point != center {
-      out.append(Frame(timeOffset: duration, point: center))
+    // Append an explicit settle frame at the rounded center if the
+    // computed final frame is off by integer rounding. Using
+    // `center.rounded()` rather than `center` preserves the contract
+    // that every emitted frame is integer-snapped — `center` may carry
+    // a fractional component when the target origin came from
+    // sub-pixel AppKit geometry.
+    let settle = CGPoint(x: center.x.rounded(), y: center.y.rounded())
+    if out.last?.point != settle {
+      out.append(Frame(timeOffset: duration, point: settle))
     }
     return out
   }

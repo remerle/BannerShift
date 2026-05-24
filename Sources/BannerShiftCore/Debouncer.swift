@@ -37,6 +37,13 @@ public final class Debouncer {
     let item = DispatchWorkItem(block: action)
     workItem = item
     lock.unlock()
+    // asyncAfter runs *outside* the lock on purpose. A concurrent
+    // cancel() that fires between the unlock and this submit will
+    // cancel `item` first; DispatchWorkItem.cancel checks isCancelled
+    // before executing, so the submitted work becomes a no-op. Moving
+    // asyncAfter inside the lock would deadlock when queue is a serial
+    // queue executing on the locking thread (which is the production
+    // case: queue == .main and the caller is on the main thread).
     queue.asyncAfter(deadline: .now() + interval, execute: item)
   }
 

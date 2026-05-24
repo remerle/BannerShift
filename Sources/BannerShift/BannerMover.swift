@@ -78,24 +78,49 @@ final class BannerMover {
 
     let resolved = resolvePositionAndAnimation(
       banner: banner, rules: rules, defaultPosition: defaultPosition)
-    let position = resolved.position
-    let animation = resolved.animation
 
-    // Pick the display the window currently belongs to.
+    guard
+      let calc = makeCalculator(
+        id: id, windowFrame: windowFrame, bannerFrame: bannerFrame, screens: screens)
+    else { return }
+
+    guard calc.invariantHolds, let baseline = baselines[id] else {
+      logger.error(
+        "BannerMover: invariant violated or baseline missing; skipping move"
+      )
+      return
+    }
+    let target = calc.targetOrigin(for: resolved.position)
+    dispatchAnimation(
+      resolved.animation, windowID: id, window: window, baseline: baseline, target: target)
+
+    logger.debug(
+      "BannerMover: window=\(String(format: "%016llx", id)) "
+        + "rule=\(resolved.ruleName) "
+        + "position=\(resolved.position.rawValue) "
+        + "animation=\(resolved.animation.rawValue) "
+        + "target=\(target)"
+    )
+  }
+
+  /// Construct a `PositionCalculator` for this banner.
+  ///
+  /// Picks the target display, captures or fetches the per-window
+  /// baseline, and resolves the primary-screen y-flip pivot. Returns
+  /// nil (with a logged error) when any of those steps cannot complete.
+  private func makeCalculator(
+    id: UInt64, windowFrame: CGRect, bannerFrame: CGRect, screens: [ScreenInfo]
+  ) -> PositionCalculator? {
     let centerAX = CGPoint(x: windowFrame.midX, y: windowFrame.midY)
     let activeFallback = NSScreen.main.map(snapshot)
     let selector = DisplaySelector(screens: screens)
     guard
       let screen = selector.screenContaining(
-        axPoint: centerAX,
-        activeScreenFallback: activeFallback
-      )
+        axPoint: centerAX, activeScreenFallback: activeFallback)
     else {
       logger.error("BannerMover: no screen available, skipping move")
-      return
+      return nil
     }
-
-    // Capture baseline on first sight of this window.
     if baselines[id] == nil {
       baselines[id] = Baseline(
         originalOrigin: windowFrame.origin,
@@ -103,32 +128,20 @@ final class BannerMover {
         bannerFrame: bannerFrame
       )
     }
-    guard let baseline = baselines[id] else { return }
-
-    let primaryHeight = screens.first?.frame.height ?? screen.frame.height
-    let calc = PositionCalculator(
+    guard let baseline = baselines[id] else { return nil }
+    // Resolve the primary display by its isPrimary flag so this matches
+    // DisplaySelector.primary. `screens.first` would agree today by
+    // coincidence (currentScreens() assigns isPrimary == idx == 0) but
+    // would diverge if the array ordering ever drifted from the flag.
+    guard let primaryHeight = screens.first(where: { $0.isPrimary })?.frame.height else {
+      logger.error("BannerMover: no primary screen in list, skipping move")
+      return nil
+    }
+    return PositionCalculator(
       windowFrame: baseline.windowFrame,
       bannerFrame: baseline.bannerFrame,
       screen: screen,
       primaryHeight: primaryHeight
-    )
-    guard calc.invariantHolds else {
-      logger.error(
-        "BannerMover: window-height invariant violated "
-          + "(window=\(baseline.windowFrame.height), "
-          + "screen=\(screen.frame.height)); skipping move"
-      )
-      return
-    }
-    let target = calc.targetOrigin(for: position)
-    dispatchAnimation(
-      animation, windowID: id, window: window, baseline: baseline, target: target)
-
-    logger.debug(
-      "BannerMover: window=\(String(format: "%016llx", id)) "
-        + "rule=\(resolved.ruleName) "
-        + "position=\(position.rawValue) animation=\(animation.rawValue) "
-        + "target=\(target)"
     )
   }
 

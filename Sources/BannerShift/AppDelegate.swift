@@ -132,6 +132,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // here means setup failed earlier and the app is terminating —
     // bail rather than start the observer.
     guard let logger else { return }
+    // Stop any prior observer before replacing it. On a fast crash-restart of
+    // notificationcenterui (or any path where this fires twice without an
+    // intervening tearDownObserver), the previous observer's CFRunLoopSource
+    // would otherwise remain attached and continue delivering callbacks.
+    axObserver?.stop()
+    axObserver = nil
     let observer = AXObserverController(pid: pid, logger: logger)
     axObserver = observer
     guard observer.start(handler: { [weak self] in self?.kickPass() }) else {
