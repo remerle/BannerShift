@@ -18,8 +18,8 @@ final class RuleEditorWindowController: NSWindowController {
 
   // List pane
   private let tableView = NSTableView()
-  private let addButton = NSButton(title: "Add", target: nil, action: nil)
-  private let removeButton = NSButton(title: "Remove", target: nil, action: nil)
+  private let addButton = NSButton()
+  private let removeButton = NSButton()
 
   // Detail pane controls
   private let nameField = NSTextField()
@@ -84,12 +84,12 @@ final class RuleEditorWindowController: NSWindowController {
     guard let content = window?.contentView else { return }
 
     configureTable()
-    addButton.target = self
-    addButton.action = #selector(addRule)
-    removeButton.target = self
-    removeButton.action = #selector(removeRule)
+    configureListButton(addButton, symbol: "plus", accessibility: "Add rule", action: #selector(addRule))
+    configureListButton(
+      removeButton, symbol: "minus", accessibility: "Remove rule", action: #selector(removeRule))
     let listButtons = NSStackView(views: [addButton, removeButton])
     listButtons.orientation = .horizontal
+    listButtons.spacing = 0
     let scroll = NSScrollView()
     scroll.documentView = tableView
     scroll.hasVerticalScroller = true
@@ -113,7 +113,9 @@ final class RuleEditorWindowController: NSWindowController {
 
     let outer = NSStackView(views: [top, separator, bottom])
     outer.orientation = .vertical
-    outer.alignment = .leading
+    // Stretch every section to the full content width; with `.leading` the
+    // tester row collapsed to its fields' intrinsic widths and truncated.
+    outer.alignment = .width
     outer.spacing = 12
     outer.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
     outer.translatesAutoresizingMaskIntoConstraints = false
@@ -125,6 +127,24 @@ final class RuleEditorWindowController: NSWindowController {
       outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
       scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 280),
       scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
+    ])
+  }
+
+  /// Style a small, icon-only `+`/`-` footer button in the macOS list-editor
+  /// idiom (square bezel, no title), sized to sit flush beneath the table.
+  private func configureListButton(
+    _ button: NSButton, symbol: String, accessibility: String, action: Selector
+  ) {
+    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: accessibility)
+    button.imagePosition = .imageOnly
+    button.bezelStyle = .smallSquare
+    button.setButtonType(.momentaryPushIn)
+    button.target = self
+    button.action = action
+    button.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      button.widthAnchor.constraint(equalToConstant: 28),
+      button.heightAnchor.constraint(equalToConstant: 24),
     ])
   }
 
@@ -213,28 +233,48 @@ final class RuleEditorWindowController: NSWindowController {
   }
 
   private func makeTester() -> NSView {
-    let header = NSTextField(labelWithString: "Test against sample text:")
+    let header = NSTextField(
+      labelWithString: "Test a rule: type sample banner text and see which rule matches.")
     header.font = .boldSystemFont(ofSize: 12)
-    let fields = [
+
+    for tf in [
       sampleAppField, sampleBundleField, sampleTitleField, sampleSubtitleField, sampleBodyField,
-    ]
-    for tf in fields {
+    ] {
       tf.delegate = self
     }
-    sampleAppField.placeholderString = "App"
-    sampleBundleField.placeholderString = "Bundle ID"
-    sampleTitleField.placeholderString = "Title"
-    sampleSubtitleField.placeholderString = "Subtitle"
-    sampleBodyField.placeholderString = "Body"
-    let inputs = NSStackView(views: fields)
-    inputs.orientation = .horizontal
-    inputs.distribution = .fillEqually
-    inputs.spacing = 6
-    let stack = NSStackView(views: [header, inputs, testResultLabel])
+
+    // Each field gets a caption above it so it is obvious what to type where;
+    // fillEqually + a min width keeps them readable across the window.
+    let columns = NSStackView(views: [
+      labeledField("App", sampleAppField),
+      labeledField("Bundle ID", sampleBundleField),
+      labeledField("Title", sampleTitleField),
+      labeledField("Subtitle", sampleSubtitleField),
+      labeledField("Body", sampleBodyField),
+    ])
+    columns.orientation = .horizontal
+    columns.distribution = .fillEqually
+    columns.spacing = 8
+
+    let stack = NSStackView(views: [header, columns, testResultLabel])
     stack.orientation = .vertical
     stack.alignment = .leading
-    stack.spacing = 6
+    stack.spacing = 8
     return stack
+  }
+
+  /// A captioned sample-text input: a small grey label over a regex field.
+  private func labeledField(_ caption: String, _ field: NSTextField) -> NSView {
+    let label = NSTextField(labelWithString: caption)
+    label.font = .systemFont(ofSize: 10)
+    label.textColor = .secondaryLabelColor
+    field.placeholderString = caption
+    field.widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
+    let column = NSStackView(views: [label, field])
+    column.orientation = .vertical
+    column.alignment = .leading
+    column.spacing = 2
+    return column
   }
 
   // MARK: Table ops
@@ -281,6 +321,7 @@ final class RuleEditorWindowController: NSWindowController {
     ] as [NSControl] {
       control.isEnabled = enabled
     }
+    removeButton.isEnabled = enabled
     guard let rule else {
       nameField.stringValue = ""
       enabledButton.state = .off
