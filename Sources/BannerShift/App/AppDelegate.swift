@@ -176,11 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func kickPass() {
-    debouncer?.schedule { [weak self] in
-      guard let self else { return }
-      self.axObserver?.refreshWindows()
-      let windows = self.axObserver?.notificationUIWindows() ?? []
-      self.mover?.process(notificationUIWindows: windows)
-    }
+    debouncer?.schedule { [weak self] in self?.runPass() }
+  }
+
+  /// Run one reposition pass: refresh the window list and move-or-restore.
+  private func runPass() {
+    axObserver?.refreshWindows()
+    let windows = axObserver?.notificationUIWindows() ?? []
+    mover?.process(notificationUIWindows: windows)
   }
 }

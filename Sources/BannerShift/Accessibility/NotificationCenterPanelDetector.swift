@@ -41,15 +41,27 @@ enum NotificationCenterPanelDetector {
 
   private static func isPanel(_ window: AXUIElement, depth: Int) -> Bool {
     if let id = AXBannerFinder.stringAttribute(window, kAXIdentifierAttribute as CFString),
-      id == Constants.notificationCenterPanelIdentifier
+      id.contains(Constants.notificationCenterPanelIdentifier)
     {
       return true
     }
     guard depth < Constants.maxAXRecursionDepth else { return false }
-    for child in AXBannerFinder.arrayAttribute(window, kAXChildrenAttribute as CFString)
-    where isPanel(child, depth: depth + 1) {
+    for child in childElements(of: window) where isPanel(child, depth: depth + 1) {
       return true
     }
     return false
+  }
+
+  /// Direct children plus `AXOrderedChildren`.
+  ///
+  /// The macOS 26 SwiftUI notification UI exposes some descendants only
+  /// through the ordered-children relationship, so a `kAXChildren`-only walk
+  /// can miss the panel marker and let the mover relocate the open panel.
+  /// No de-duplication is needed: this is a boolean search, so visiting a
+  /// shared node twice is harmless.
+  private static func childElements(of element: AXUIElement) -> [AXUIElement] {
+    let direct = AXBannerFinder.arrayAttribute(element, kAXChildrenAttribute as CFString)
+    let ordered = AXBannerFinder.arrayAttribute(element, "AXOrderedChildren" as CFString)
+    return ordered.isEmpty ? direct : direct + ordered
   }
 }

@@ -167,7 +167,7 @@ and the macOS version in a comment on the affected constant.
 | Constant | Value | What it identifies |
 | --- | --- | --- |
 | `notificationUIBundleIdentifier` | `com.apple.notificationcenterui` | The system process that hosts banners. |
-| `bannerSubroles` | `AXNotificationCenterBanner`, `AXNotificationCenterAlert`, `AXSystemDialog` | AX subroles that mark a window's banner element. |
+| `bannerSubroles` | `AXNotificationCenterBanner`, `AXNotificationCenterAlert` | AX subroles carried by the banner element inside a notification window (never the enclosing window's own subrole). |
 | `notificationCenterPanelIdentifier` | `widget-editor` | Present only when Notification Center is expanded; used to avoid moving the panel. |
 | `dockPadding` | `30.0` pt | Keeps middle/bottom banners clear of the Dock. |
 | `eventDebounceInterval` | `0.030` s | AX-event coalescing window. |
