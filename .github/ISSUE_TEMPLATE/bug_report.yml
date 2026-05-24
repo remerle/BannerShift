@@ -1,0 +1,62 @@
+name: Bug report
+description: Report something that isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please don't include sensitive
+        notification content in this public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe, and what did you expect instead?
+      placeholder: Banners with a rule for "Slack" still appear top-right instead of bottom-left.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact sequence that triggers the bug.
+      placeholder: |
+        1. Set default position to Bottom Right
+        2. Send a test notification
+        3. Banner appears top-right
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "14.5 (23F79)"
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: BannerShift version
+      description: From the menu-bar "About BannerShift" window.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: displays
+    attributes:
+      label: Display configuration
+      options:
+        - Single display
+        - Multiple displays
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: >
+        Optional. From ~/Library/Logs/BannerShift.log. Enable debug logging only
+        if needed, and redact any notification content before pasting.
+      render: text
+    validations:
+      required: false
