@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:BannerShift}",
+            "name": "Debug BannerShift",
+            "target": "BannerShift",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug BannerShift"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:BannerShift}",
+            "name": "Release BannerShift",
+            "target": "BannerShift",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release BannerShift"
+        }
+    ]
+}

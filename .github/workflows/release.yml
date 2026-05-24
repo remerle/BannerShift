@@ -155,11 +155,26 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          # Capture the original user keychain search list to a file so the
+          # teardown step can restore it byte-for-byte. Doing it this way
+          # also avoids the word-splitting hazard of an unquoted command
+          # substitution if any keychain path ever contained whitespace.
+          ORIGINAL_KEYCHAINS_FILE="$RUNNER_TEMP/original-keychain-list.txt"
+          security list-keychains -d user | tr -d '"' > "$ORIGINAL_KEYCHAINS_FILE"
+
           # Prepend the build keychain to the search list so codesign finds the cert.
-          security list-keychains -d user -s "$KEYCHAIN_PATH" \
-            $(security list-keychains -d user | tr -d '"')
+          # Read entries safely (NUL-delimited would be safer, but security
+          # outputs one path per line and the file is local, not user input).
+          declare -a SEARCH_LIST=( "$KEYCHAIN_PATH" )
+          while IFS= read -r entry; do
+            entry="${entry#"${entry%%[![:space:]]*}"}"   # ltrim
+            entry="${entry%"${entry##*[![:space:]]}"}"   # rtrim
+            [[ -n "$entry" ]] && SEARCH_LIST+=( "$entry" )
+          done < "$ORIGINAL_KEYCHAINS_FILE"
+          security list-keychains -d user -s "${SEARCH_LIST[@]}"
 
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "ORIGINAL_KEYCHAINS_FILE=$ORIGINAL_KEYCHAINS_FILE" >> "$GITHUB_ENV"
 
       - name: Stage App Store Connect API key
         env:
@@ -288,6 +303,21 @@ jobs:
         if: always()
         run: |
           set +e
+          # Restore the original keychain search list before deleting our
+          # ephemeral keychain so subsequent steps and runners see the
+          # pre-job state.
+          if [[ -n "${ORIGINAL_KEYCHAINS_FILE:-}" && -f "$ORIGINAL_KEYCHAINS_FILE" ]]; then
+            declare -a RESTORE_LIST=()
+            while IFS= read -r entry; do
+              entry="${entry#"${entry%%[![:space:]]*}"}"
+              entry="${entry%"${entry##*[![:space:]]}"}"
+              [[ -n "$entry" ]] && RESTORE_LIST+=( "$entry" )
+            done < "$ORIGINAL_KEYCHAINS_FILE"
+            if (( ${#RESTORE_LIST[@]} > 0 )); then
+              security list-keychains -d user -s "${RESTORE_LIST[@]}"
+            fi
+            rm -f "$ORIGINAL_KEYCHAINS_FILE"
+          fi
           if [[ -n "${KEYCHAIN_PATH:-}" && -f "$KEYCHAIN_PATH" ]]; then
             security delete-keychain "$KEYCHAIN_PATH"
           fi

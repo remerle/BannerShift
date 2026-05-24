@@ -10,6 +10,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${ROOT}"
 
+# Remove the intermediate notarization ZIP on any exit so a SIGINT,
+# notarytool timeout, or rejection branch does not leave a signed
+# artifact behind in build/.
+ZIP_TO_CLEAN=""
+cleanup() {
+    [[ -n "${ZIP_TO_CLEAN}" && -f "${ZIP_TO_CLEAN}" ]] && rm -f "${ZIP_TO_CLEAN}"
+}
+trap cleanup EXIT INT TERM
+
 [[ -f "${ROOT}/.env" ]] || {
     echo "Missing .env. Run ./populate-secrets.sh first." >&2
     exit 1
@@ -62,6 +71,7 @@ codesign --verify --deep --strict --verbose=2 "${APP}"
 
 log "notarize"
 rm -f "${ZIP}"
+ZIP_TO_CLEAN="${ZIP}"
 ditto -c -k --sequesterRsrc --keepParent "${APP}" "${ZIP}"
 # notarytool submit --wait reaches terminal state for both Accepted and
 # Invalid, so capture the JSON and parse status ourselves rather than rely
@@ -95,7 +105,9 @@ xcrun stapler validate "${APP}"
 # abort an otherwise-successful build.
 spctl --assess --type execute -vv "${APP}" || true
 # Intermediate notarization artifact; the .tar.gz is the distributable.
+# The trap also handles cleanup on abnormal exits.
 rm -f "${ZIP}"
+ZIP_TO_CLEAN=""
 
 log "package"
 ( cd "${ROOT}/build" && tar -czf "${TAR}" "BannerShift.app" )

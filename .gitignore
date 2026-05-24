@@ -10,7 +10,11 @@ build/
 .DS_Store
 
 # IDE
-.vscode/
+# Allow the shared launch.json so contributors get a working Swift debug
+# config out of the box; ignore everything else under .vscode/ (per-user
+# state like .vscode/settings.json that varies by machine).
+.vscode/*
+!.vscode/launch.json
 .idea/
 
 # Code signing artifacts — credentials, never commit
