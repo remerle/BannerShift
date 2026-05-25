@@ -22,10 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Set as the notification-center delegate at launch; see
   /// `TestNotificationPresenter`.
   private let notificationPresenter = TestNotificationPresenter()
-  /// Owns the pinned-notifications list and its always-on-top panel. Built
-  /// here at property-init (it only needs `Preferences`, which reads live
-  /// from `UserDefaults`) and fed by `BannerMover`'s `onPin` callback.
-  private let reminderController = ReminderController(preferences: Preferences())
+  /// Owns the pinned-notifications list and its always-on-top panel. Late-init
+  /// in `applicationDidFinishLaunching` so it shares the app's single
+  /// `Preferences` instance, and fed by `BannerMover`'s `onPin` callback.
+  private var reminderController: ReminderController?
 
   // Late-init dependencies. Nil until `applicationDidFinishLaunching`
   // wires them up; nil also after a fail-fast termination during that
@@ -90,7 +90,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let ruleEditor = RuleEditorWindowController(ruleStore: ruleStore)
     self.ruleEditor = ruleEditor
 
-    // 4. Banner mover machinery. The matcher receives a diagnostic sink
+    // 4. Reminder panel. Built before the mover so the onPin closure can
+    //    reference the non-optional local.
+    let reminderController = ReminderController(preferences: preferences)
+    self.reminderController = reminderController
+
+    // 5. Banner mover machinery. The matcher receives a diagnostic sink
     //    so a malformed regex is surfaced to the log rather than silently
     //    disabling the rule with no user-visible trace.
     let matcher = RuleMatcher(
@@ -103,12 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       ruleStore: ruleStore,
       matcher: matcher,
       animator: animator,
-      onPin: { [weak self] captured in self?.reminderController.capture(captured) }
+      onPin: { [weak self] captured in self?.reminderController?.capture(captured) }
     )
     self.mover = mover
     self.debouncer = Debouncer(interval: Constants.eventDebounceInterval, queue: .main)
 
-    // 5. Workspace observers; start the AX observer when the
+    // 6. Workspace observers; start the AX observer when the
     //    notification UI process is up.
     let watcher = NotificationUIWatcher(
       logger: logger,
@@ -118,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     self.watcher = watcher
     watcher.start()
 
-    // 6. Menu bar.
+    // 7. Menu bar.
     installMenuBar()
   }
 

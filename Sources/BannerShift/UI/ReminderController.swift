@@ -20,6 +20,22 @@ final class ReminderController: NSObject, NSWindowDelegate {
   /// Prevents re-snapping to top-right when the panel resizes after the
   /// user has dragged it to a different position.
   private var hasPositioned = false
+  /// True once the scratch `setContentSize` has resolved the clip view's
+  /// 320pt width for label-wrapping measurements.
+  ///
+  /// The scratch only needs to run once: the width stays resolved across
+  /// subsequent renders. Skipping it on re-renders avoids a momentary
+  /// giant-panel flash while the list is already visible.
+  private var didResolveWidth = false
+  /// Suppresses `windowDidMove(_:)` persistence while programmatic frame
+  /// changes are in flight (scratch sizing, real sizing, `positionTopRight`,
+  /// and saved-origin restore in `ensurePanel`).
+  ///
+  /// `windowDidMove` is delivered synchronously during `setFrameOrigin` and
+  /// `setContentSize` on the main thread. Setting this flag before the call
+  /// and clearing it after is sufficient to distinguish programmatic moves
+  /// from genuine user drags.
+  private var isAdjustingFrame = false
 
   init(preferences: Preferences) {
     self.preferences = preferences
@@ -72,11 +88,23 @@ final class ReminderController: NSObject, NSWindowDelegate {
     }
     stack.addArrangedSubview(footerView())
 
+    // All programmatic frame mutations below must not be persisted as
+    // user-dragged positions. Set the flag before any setContentSize /
+    // setFrameOrigin call and clear it after the whole region; windowDidMove
+    // is delivered synchronously so the flag is still true when it fires.
+    isAdjustingFrame = true
+
     // Give the clip view a resolved width before measuring: on the first
     // render the panel has never been laid out, so the stack's width (tied to
     // the clip view) is still 0 and `fittingSize.height` would be degenerate.
-    // A generous scratch height establishes the 320pt content width first.
-    panel.setContentSize(NSSize(width: 320, height: 4000))
+    // A modest 600pt scratch establishes the 320pt content width. This only
+    // runs once; subsequent renders skip it so the visible panel does not flash
+    // to 600pt before shrinking back to its real content height.
+    if !didResolveWidth {
+      panel.setContentSize(NSSize(width: 320, height: 600))
+      didResolveWidth = true
+    }
+
     stack.layoutSubtreeIfNeeded()
     let contentHeight = stack.fittingSize.height
     let screen = panel.screen ?? NSScreen.main
@@ -92,6 +120,7 @@ final class ReminderController: NSObject, NSWindowDelegate {
       hasPositioned = true
     }
 
+    isAdjustingFrame = false
     panel.orderFrontRegardless()  // show without activating BannerShift
   }
 
@@ -127,6 +156,11 @@ final class ReminderController: NSObject, NSWindowDelegate {
     // identifier so the gesture handler can resolve it. Empty when unknown.
     row.identifier = NSUserInterfaceItemIdentifier(item.bundleID ?? "")
     let click = NSClickGestureRecognizer(target: self, action: #selector(openSourceApp(_:)))
+    // The dismiss NSButton consumes its own clicks (its action fires and the
+    // click gesture on the enclosing row does NOT also trigger), so the two
+    // coexist safely. If the button is ever replaced by a custom view that
+    // doesn't consume clicks, add a gesture-recognizer delegate to block the
+    // row gesture when the hit falls inside the button's frame.
     row.addGestureRecognizer(click)
     return row
   }
@@ -214,8 +248,12 @@ final class ReminderController: NSObject, NSWindowDelegate {
 
     // Restore a previously saved dragged position. If none exists, the default
     // top-right placement is applied in render() after the panel is sized.
+    // Bracket with isAdjustingFrame so the delegate does not re-persist the
+    // origin we are in the middle of restoring.
     if let origin = preferences.pinnedPanelOrigin {
+      isAdjustingFrame = true
       panel.setFrameOrigin(origin)
+      isAdjustingFrame = false
       hasPositioned = true
     }
 
@@ -242,9 +280,15 @@ final class ReminderController: NSObject, NSWindowDelegate {
 
   // MARK: NSWindowDelegate
 
-  /// Remember the dragged position (origin only — not notification content).
+  /// Persist the panel origin after a genuine user drag.
+  ///
+  /// Programmatic frame changes (scratch sizing, real sizing, `positionTopRight`,
+  /// and the saved-origin restore in `ensurePanel`) set `isAdjustingFrame` before
+  /// calling `setFrameOrigin` / `setContentSize`; because `windowDidMove` is
+  /// delivered synchronously on the main thread, the flag is still true here and
+  /// the write is skipped. Only a real user drag arrives with the flag clear.
   func windowDidMove(_ notification: Notification) {
-    guard let panel else { return }
+    guard !isAdjustingFrame, let panel else { return }
     preferences.pinnedPanelOrigin = panel.frame.origin
   }
 }
