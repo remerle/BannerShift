@@ -4,8 +4,11 @@ import Foundation
 /// sharing a `(bundleID ?? lowercased appName, title)` key, with an
 /// occurrence `count` and a stable `id` for the UI.
 public struct PinnedItem: Equatable, Sendable, Identifiable {
-  /// Stable identity derived from the collapse key; also used as the
-  /// dismiss target.
+  /// Stable identity for this group, also used as the `dismiss(id:)` target.
+  ///
+  /// Opaque: it is derived from the collapse key and its encoding may change.
+  /// Treat it as a token to pass back to `dismiss(id:)`; do not parse it or
+  /// persist it across sessions (the list is in-memory only regardless).
   public let id: String
 
   /// Display name of the source app (newest wins on collapse).
@@ -87,9 +90,20 @@ public struct PinnedList: Equatable {
     items.removeAll()
   }
 
-  /// Collapse key: bundle ID when present (apps with the same display name
-  /// stay distinct), otherwise the case-folded app name, joined to the title
-  /// with a NUL that cannot appear in either field.
+  /// Collapse key joining an app discriminator to the title with a NUL that
+  /// cannot appear in either field.
+  ///
+  /// The app discriminator is the bundle ID when present — it is the stable,
+  /// authoritative identifier, so it is used verbatim and keeps two apps with
+  /// the same display name distinct. When no bundle ID resolved, the app's
+  /// display name stands in for it and is case-folded, because the same app
+  /// can report its name with differing case across the paths a banner
+  /// arrives by; folding keeps "Slack" and "slack" in one group.
+  ///
+  /// The title is matched verbatim (case-sensitive) by design: unlike the
+  /// app discriminator it is notification content, and two banners whose
+  /// titles differ only in case are treated as distinct groups rather than
+  /// silently merged.
   private static func collapseKey(bundleID: String?, appName: String, title: String) -> String {
     let appPart = bundleID ?? appName.lowercased()
     return appPart + "\u{0}" + title

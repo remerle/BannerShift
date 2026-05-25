@@ -89,4 +89,15 @@ import Testing
   // The 5 oldest (App0..App4) were evicted from the bottom; newest is on top.
   #expect(list.items.first?.appName == "App\(Constants.maxPinnedItems + 4)")
   #expect(list.items.contains { $0.appName == "App0" } == false)
+  // App5 is the oldest survivor: eviction must not overshoot past the cap.
+  #expect(list.items.contains { $0.appName == "App5" })
+}
+
+@Test func titleIsCaseSensitiveInCollapseKey() {
+  // Unlike the app-name fallback, the title is matched verbatim by design:
+  // titles differing only in case stay distinct groups.
+  var list = PinnedList()
+  list.pin(CapturedNotification(appName: "Slack", bundleID: "com.slack", title: "New message"))
+  list.pin(CapturedNotification(appName: "Slack", bundleID: "com.slack", title: "New Message"))
+  #expect(list.items.count == 2)
 }
