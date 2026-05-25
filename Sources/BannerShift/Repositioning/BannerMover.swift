@@ -46,19 +46,26 @@ final class BannerMover {
   private let ruleStore: RuleStore
   private let matcher: RuleMatcher
   private let animator: Animator
+  /// Sink invoked exactly once per banner (at first-sight) when a matched rule has `pinsToList` set.
+  ///
+  /// Fired on the main thread, like every other method here. Defaults to a
+  /// no-op so non-pinning callers need not supply it.
+  private let onPin: (CapturedNotification) -> Void
 
   init(
     logger: FileLogger,
     preferences: Preferences,
     ruleStore: RuleStore,
     matcher: RuleMatcher,
-    animator: Animator
+    animator: Animator,
+    onPin: @escaping (CapturedNotification) -> Void = { _ in }
   ) {
     self.logger = logger
     self.preferences = preferences
     self.ruleStore = ruleStore
     self.matcher = matcher
     self.animator = animator
+    self.onPin = onPin
   }
 
   /// Top-level pass: visit each notification UI window and move-or-restore.
@@ -177,6 +184,12 @@ final class BannerMover {
         windowFrame: windowFrame,
         bannerFrame: bannerFrame
       )
+      // First sight of this banner window: capture it once, if its rule
+      // pins. Re-processing the same window on later debounced passes finds
+      // a non-nil snapshot and so never double-counts.
+      if let pinned = resolved.pinned {
+        onPin(pinned)
+      }
     }
     let target = calc.targetOrigin(for: resolved.position)
     dispatchAnimation(resolved.animation, windowID: id, window: window, target: target)
@@ -238,6 +251,9 @@ final class BannerMover {
     let position: Position
     let animation: Animation
     let ruleName: String
+    /// Non-nil when the matched rule pins; carries the captured fields to
+    /// hand to `onPin` at first-sight.
+    let pinned: CapturedNotification?
   }
 
   /// Extract banner text, resolve the source bundle ID, and find the
@@ -253,7 +269,8 @@ final class BannerMover {
     // irrelevant. Skip the AX subtree text extraction (several cross-process
     // AX calls) so it stays off the first-move critical path.
     guard !rules.isEmpty else {
-      return ResolvedMatch(position: defaultPosition, animation: .none, ruleName: "(default)")
+      return ResolvedMatch(
+        position: defaultPosition, animation: .none, ruleName: "(default)", pinned: nil)
     }
     var bannerText = BannerTextExtractor.extract(from: banner)
     if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
@@ -266,11 +283,17 @@ final class BannerMover {
       )
     }
     let match = matcher.match(rules: rules, banner: bannerText)
+    let pinned: CapturedNotification? =
+      (match?.rule.pinsToList == true)
+      ? CapturedNotification(
+        appName: bannerText.appName, bundleID: bannerText.bundleID,
+        title: bannerText.title, body: bannerText.body)
+      : nil
     return ResolvedMatch(
       position: match?.rule.position ?? defaultPosition,
       animation: match?.rule.animation ?? .none,
-      ruleName: match?.rule.name ?? "(default)"
-    )
+      ruleName: match?.rule.name ?? "(default)",
+      pinned: pinned)
   }
 
   /// Dispatch per animation style.
