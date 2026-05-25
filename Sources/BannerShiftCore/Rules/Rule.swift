@@ -1,16 +1,15 @@
 import Foundation
 
-/// One user-defined rule: a conjunction of regex patterns over banner
+/// One user-defined rule: a conjunction of wildcard patterns over banner
 /// metadata plus an override position and animation to apply on match.
 ///
-/// All pattern fields are optional and combined with logical AND; a nil
-/// or empty pattern field is treated as "match anything." At match time
-/// `RuleMatcher` compiles every pattern with `ignoresCase` and
-/// `dotMatchesNewlines` applied, so:
-/// - matching is always case-insensitive (inline `(?-i)` is overridden);
-/// - `.` matches embedded newlines in multi-line body text.
-/// `position` and `animation` are optional so the editor can leave them
-/// nil to mean "keep the default."
+/// Pattern fields are simple wildcards, not regex: `*` matches any run of
+/// characters and every other character is matched literally. Matching is
+/// case-insensitive and substring-based (the pattern need only appear within
+/// the field). An empty or nil pattern field is *ignored*; a rule with no
+/// pattern fields specified matches nothing. Specified fields are combined
+/// with logical AND. `position` and `animation` are optional so the editor can
+/// leave them nil to mean "keep the default."
 public struct Rule: Equatable, Sendable, Codable, Identifiable {
   /// Stable identifier across renames, edits, and reorderings.
   ///
@@ -27,25 +26,25 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   /// Lets the user disable a rule without deleting it.
   public var enabled: Bool
 
-  /// Regex pattern matched against the banner's source-app display name
-  /// (e.g. `"Slack"`). Nil or empty means "match any app."
+  /// Wildcard pattern matched against the banner's source-app display name
+  /// (e.g. `"Slack"`). Nil or empty leaves the app unconstrained.
   public var appPattern: String?
 
-  /// Regex pattern matched against the resolved bundle identifier
-  /// (e.g. `"com\\.tinyspeck\\.slackmacgap"`).
+  /// Wildcard pattern matched against the resolved bundle identifier
+  /// (e.g. `"com.tinyspeck.slackmacgap"`).
   ///
   /// Use this when multiple apps share a display name or when stability
   /// across user-facing renames matters.
   public var bundleIDPattern: String?
 
-  /// Regex pattern matched against the banner's title line. Nil or
-  /// empty means "match any title."
+  /// Wildcard pattern matched against the banner's title line. Nil or
+  /// empty leaves the title unconstrained.
   public var titlePattern: String?
 
-  /// Regex pattern matched against the banner's subtitle line.
+  /// Wildcard pattern matched against the banner's subtitle line.
   public var subtitlePattern: String?
 
-  /// Regex pattern matched against the banner's body text.
+  /// Wildcard pattern matched against the banner's body text.
   public var bodyPattern: String?
 
   /// Position to move the matched banner to.
