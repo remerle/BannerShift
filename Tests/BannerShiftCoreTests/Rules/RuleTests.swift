@@ -24,6 +24,7 @@ import Testing
   #expect(rule.position == nil)
   #expect(rule.animation == nil)
   #expect(rule.appPattern == nil)
+  #expect(rule.pinsToList == false)
 }
 
 @Test func ruleCodableRoundTrip() throws {
@@ -46,10 +47,6 @@ import Testing
   let data = try JSONEncoder().encode(rule)
   let back = try JSONDecoder().decode(Rule.self, from: data)
   #expect(back == rule)
-}
-
-@Test func ruleDefaultsPinsToListFalse() {
-  #expect(Rule().pinsToList == false)
 }
 
 @Test func ruleCodableRoundTripsPinsToList() throws {
