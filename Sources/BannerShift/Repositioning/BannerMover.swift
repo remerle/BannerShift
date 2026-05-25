@@ -15,6 +15,16 @@ import CoreGraphics
 /// there is no banner to move (e.g. the window is the expanded
 /// Notification Center panel, or the banner has gone away).
 ///
+/// On macOS 26 the banner element's AX subrole is assigned *after* the
+/// banner is already on screen, so keying off the subrole alone misses
+/// fast-arriving banners (the per-banner window can be replaced before the
+/// subrole lands). The mover therefore finds the banner two ways — by
+/// subrole, or, failing that, structurally via
+/// `AXBannerFinder.findBannerByStructure` — and in both cases measures the
+/// element's real frame. There is no assumed banner geometry: a banner's
+/// height varies with its content, so the resting frame is always read from
+/// the live element, never synthesised.
+///
 /// `windowSnapshots` records each moved window's original geometry, keyed
 /// by AX element identity (`elementID`). The snapshot is captured on the
 /// first move and reused on later passes as the *stable baseline*, so the
@@ -92,30 +102,43 @@ final class BannerMover {
   ) {
     let id = elementID(window)
 
-    // Open Notification Center panel: never move it; drop any tracked state.
+    // Open Notification Center panel: never move it. If we moved it before its
+    // panel marker was populated (the marker can lag, like the banner subrole),
+    // put it back so the panel isn't left displaced.
     if NotificationCenterPanelDetector.isPanel(window) {
+      restoreMisMovedPanel(window: window, id: id)
+      return
+    }
+
+    guard let windowFrame = AXBannerFinder.frame(of: window) else {
       forget(id: id)
       return
     }
 
-    // No banner inside this window (e.g. it was just dismissed): drop the
-    // tracked state without moving the window. The window is a throwaway the
-    // OS is about to destroy; moving it back would only snap the
-    // still-sliding-out banner into view for a frame.
-    guard let banner = AXBannerFinder.find(in: window),
-      let liveBannerFrame = AXBannerFinder.frame(of: banner),
-      let windowFrame = AXBannerFinder.frame(of: window)
+    // macOS assigns the banner element's AX subrole *after* it is already on
+    // screen, so the subrole-based finder misses a banner that is visibly
+    // rendering — most visibly under a fast burst, where the window can be
+    // replaced before the subrole ever lands. Fall back to the structural
+    // finder, which locates the same element by its place in the notification
+    // stack and reads its real frame. A window with neither is a dismissed
+    // banner's throwaway window (about to be destroyed) or an unrelated helper
+    // window: drop tracked state without moving — see `forget`.
+    let subroleBanner = AXBannerFinder.find(in: window)
+    guard
+      let banner = subroleBanner ?? AXBannerFinder.findBannerByStructure(in: window),
+      let liveBannerFrame = AXBannerFinder.frame(of: banner)
     else {
       forget(id: id)
       return
     }
+    // Which finder matched, for diagnostics: "structure" means the subrole had
+    // not landed yet and we caught the banner by tree structure instead.
+    let detection = subroleBanner != nil ? "subrole" : "structure"
 
-    // Anchor to the banner's *resting* spot, not its live frame. As a banner
-    // slides in, its measured minX is still off the right edge, but it always
-    // comes to rest the same inset from the container's right edge. Deriving
-    // the resting frame lets us move the container the moment the banner
-    // appears, so it slides into the target rather than appearing top-right
-    // and then jumping. minY and size are stable during the horizontal slide.
+    // Anchor to the banner's *resting* spot — not the live minX, which is still
+    // off the right edge mid-slide-in — so the move can fire on first sight:
+    // the banner always comes to rest the same inset from the container's right
+    // edge, and its size/minY are stable during the horizontal slide.
     let bannerFrame = CGRect(
       x: windowFrame.width - liveBannerFrame.width - Constants.bannerRightPadding,
       y: liveBannerFrame.minY,
@@ -158,6 +181,7 @@ final class BannerMover {
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
+        + "detection=\(detection) "
         + "rule=\(resolved.ruleName) "
         + "position=\(resolved.position.rawValue) "
         + "animation=\(resolved.animation.rawValue) "
@@ -285,6 +309,19 @@ final class BannerMover {
       animator.animate(
         windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
     }
+  }
+
+  /// Restore a panel we moved before recognizing it as the panel, then forget.
+  ///
+  /// The container-detection path can move a window on the first pass before
+  /// its panel marker is populated. Once `isPanel` reports true, put the
+  /// window back at its captured origin so the open panel isn't left
+  /// displaced. A no-op (beyond forgetting) if we never moved it.
+  private func restoreMisMovedPanel(window: AXUIElement, id: UInt64) {
+    guard let snapshot = windowSnapshots.removeValue(forKey: id) else { return }
+    animator.cancel(windowID: id)
+    Animator.set(point: snapshot.originalOrigin, on: window)
+    logger.debug("BannerMover: restored mis-moved panel \(String(format: "%016llx", id))")
   }
 
   /// Drop the tracked state for a window without moving it.

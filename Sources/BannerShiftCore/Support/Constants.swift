@@ -107,14 +107,6 @@ public enum Constants {
   /// comfortably without unbounded growth on a long-lived install.
   public static let maxLogFileSize: Int = 5 * 1024 * 1024
 
-  /// `AXError` raw value returned when `AXObserverAddNotification` is
-  /// called for an element/notification pair that is already registered.
-  ///
-  /// Benign; the caller should silently ignore it. The Swift overlay's
-  /// `AXError` enum does not expose a named case for this value, so
-  /// callers compare against the raw `Int32`.
-  public static let axErrorNotificationAlreadyRegistered: Int32 = -25200
-
   /// Maximum depth for recursive AX subtree traversal.
   ///
   /// AX data comes from an external OS process (`notificationcenterui`)

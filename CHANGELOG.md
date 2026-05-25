@@ -21,7 +21,9 @@ truth and is injected into the app bundle at build time. See
 
 - Banners now reposition correctly on macOS 26, whose rebuilt Notification
   Center previously left every banner in the top-right regardless of the chosen
-  position. The banner also no longer flickers between positions as it appears.
+  position. This now holds for banners arriving in quick succession, which could
+  previously slip through and stay in the top-right. The banner also no longer
+  flickers between positions as it appears.
 - Dismissing a banner no longer flashes it back in the top-right corner as it
   slides away.
 

@@ -33,6 +33,45 @@ enum AXBannerFinder {
     return nil
   }
 
+  /// Locate the banner element by structure when its AX subrole has not
+  /// been assigned yet.
+  ///
+  /// macOS 26 assigns the banner's `AXSubrole` *after* the banner is
+  /// already on screen, so `find(in:)` (which keys on the subrole) misses
+  /// a banner that is visibly rendering — most acutely under a fast burst,
+  /// where the per-banner window can be replaced before the subrole lands.
+  /// This fallback instead finds the banner by its place in the tree: the
+  /// notification stack is an `AXScrollArea`, and the banner is its first
+  /// child with a non-empty frame. Returns the live element (frame
+  /// included), so callers measure real geometry rather than assuming it.
+  ///
+  /// The `AXScrollArea`-hosts-the-banner structure is an undocumented macOS
+  /// internal; if banners stop being repositioned under burst after an OS
+  /// upgrade, this traversal is a place to look (alongside
+  /// `Constants.bannerSubroles`). Returns nil when the window has no scroll
+  /// area or no non-empty child — e.g. a dismissed banner's throwaway
+  /// window — which the caller treats as "no banner to move".
+  static func findBannerByStructure(in window: AXUIElement) -> AXUIElement? {
+    guard let scrollArea = firstDescendant(of: window, role: kAXScrollAreaRole, depth: 0) else {
+      return nil
+    }
+    return arrayAttribute(scrollArea, kAXChildrenAttribute as CFString).first {
+      guard let frame = frame(of: $0) else { return false }
+      return frame.width > 0 && frame.height > 0
+    }
+  }
+
+  private static func firstDescendant(
+    of element: AXUIElement, role: String, depth: Int
+  ) -> AXUIElement? {
+    if stringAttribute(element, kAXRoleAttribute as CFString) == role { return element }
+    guard depth < Constants.maxAXRecursionDepth else { return nil }
+    for child in arrayAttribute(element, kAXChildrenAttribute as CFString) {
+      if let hit = firstDescendant(of: child, role: role, depth: depth + 1) { return hit }
+    }
+    return nil
+  }
+
   /// Combines the element's AX position and size into a frame, or `nil`
   /// if either attribute is missing.
   static func frame(of element: AXUIElement) -> CGRect? {
