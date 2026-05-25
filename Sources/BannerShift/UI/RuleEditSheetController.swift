@@ -58,18 +58,54 @@ final class RuleEditSheetController: NSObject {
   // MARK: UI
 
   private func buildSheet() -> NSWindow {
+    let header = NSTextField(labelWithString: isNew ? "Add Rule" : "Edit Rule")
+    header.font = .boldSystemFont(ofSize: 13)
+    header.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+    let grid = makeGrid()
+    let buttons = makeButtons()
+
+    let inset: CGFloat = 20
+    let outer = NSStackView(views: [header, grid, buttons])
+    outer.orientation = .vertical
+    outer.alignment = .leading
+    outer.spacing = 14
+    outer.edgeInsets = NSEdgeInsets(top: 18, left: inset, bottom: 18, right: inset)
+    outer.translatesAutoresizingMaskIntoConstraints = false
+
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    guard let content = window.contentView else { return window }
+    content.addSubview(outer)
+    NSLayoutConstraint.activate([
+      outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+      outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+      outer.topAnchor.constraint(equalTo: content.topAnchor),
+      outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+      // Set the field column width via a bare field; the App/Bundle cells share
+      // that width with their Choose… button. Buttons span the grid so the
+      // default button lines up under the fields' right edge.
+      titleField.widthAnchor.constraint(equalToConstant: 300),
+      buttons.widthAnchor.constraint(equalTo: grid.widthAnchor),
+    ])
+    window.layoutIfNeeded()
+    window.setContentSize(outer.fittingSize)
+    return window
+  }
+
+  /// Build the configured form grid: a Match section (the criteria, with
+  /// Choose… buttons on the App and Bundle ID rows) over an Action section
+  /// (position and animation), with right-aligned labels.
+  private func makeGrid() -> NSGridView {
     nameField.placeholderString = "Rule name"
     for field in [appField, bundleField, titleField, subtitleField, bodyField] {
       field.placeholderString = "* matches anything; empty = ignore"
     }
     positionPopUp.addItem(withTitle: "(default)")
-    Position.allCases.forEach { positionPopUp.addItem(withTitle: $0.displayName) }
+    for position in Position.allCases { positionPopUp.addItem(withTitle: position.displayName) }
     animationPopUp.addItem(withTitle: "(default)")
-    Animation.allCases.forEach { animationPopUp.addItem(withTitle: $0.displayName) }
-
-    let header = NSTextField(labelWithString: isNew ? "Add Rule" : "Edit Rule")
-    header.font = .boldSystemFont(ofSize: 13)
-    header.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    for animation in Animation.allCases { animationPopUp.addItem(withTitle: animation.displayName) }
 
     let matchHeader = sectionLabel("Match")
     let actionHeader = sectionLabel("Action")
@@ -116,7 +152,12 @@ final class RuleEditSheetController: NSObject {
     {
       view.setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
+    return grid
+  }
 
+  /// Build the trailing Cancel/Add(Done) button row; a leading spacer pushes
+  /// the buttons to the trailing edge.
+  private func makeButtons() -> NSStackView {
     let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
     cancelButton.bezelStyle = .rounded
     cancelButton.keyEquivalent = "\u{1b}"
@@ -130,34 +171,7 @@ final class RuleEditSheetController: NSObject {
     let buttons = NSStackView(views: [spacer, cancelButton, doneButton])
     buttons.orientation = .horizontal
     buttons.spacing = 8
-
-    let inset: CGFloat = 20
-    let outer = NSStackView(views: [header, grid, buttons])
-    outer.orientation = .vertical
-    outer.alignment = .leading
-    outer.spacing = 14
-    outer.edgeInsets = NSEdgeInsets(top: 18, left: inset, bottom: 18, right: inset)
-    outer.translatesAutoresizingMaskIntoConstraints = false
-
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
-      styleMask: [.titled], backing: .buffered, defer: false)
-    guard let content = window.contentView else { return window }
-    content.addSubview(outer)
-    NSLayoutConstraint.activate([
-      outer.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-      outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-      outer.topAnchor.constraint(equalTo: content.topAnchor),
-      outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-      // Set the field column width via a bare field; the App/Bundle cells share
-      // that width with their Choose… button. Buttons span the grid so the
-      // default button lines up under the fields' right edge.
-      titleField.widthAnchor.constraint(equalToConstant: 300),
-      buttons.widthAnchor.constraint(equalTo: grid.widthAnchor),
-    ])
-    window.layoutIfNeeded()
-    window.setContentSize(outer.fittingSize)
-    return window
+    return buttons
   }
 
   private func rightLabel(_ string: String) -> NSTextField {
@@ -247,7 +261,9 @@ final class RuleEditSheetController: NSObject {
   }
 
   /// Present an app picker over the sheet and pass the chosen `.app` URL to
-  /// `assign`. No-op if the user cancels.
+  /// `assign`.
+  ///
+  /// No-op if the user cancels.
   private func chooseApplication(_ assign: @escaping (URL) -> Void) {
     guard let sheet else { return }
     let panel = NSOpenPanel()

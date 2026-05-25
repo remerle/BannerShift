@@ -112,10 +112,7 @@ public final class RuleMatcher {
     // A rule with no criteria specified matches nothing (not everything).
     let specified = criteria.filter { $0.pattern?.isEmpty == false }
     guard !specified.isEmpty else { return false }
-    for criterion in specified {
-      if try !check(criterion.pattern, criterion.subject) { return false }
-    }
-    return true
+    return try specified.allSatisfy { try check($0.pattern, $0.subject) }
   }
 
   private func check(_ pattern: String?, _ subject: String) throws -> Bool {

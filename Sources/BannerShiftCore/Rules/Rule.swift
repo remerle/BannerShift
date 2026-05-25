@@ -27,7 +27,9 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   public var enabled: Bool
 
   /// Wildcard pattern matched against the banner's source-app display name
-  /// (e.g. `"Slack"`). Nil or empty leaves the app unconstrained.
+  /// (e.g. `"Slack"`).
+  ///
+  /// Nil or empty leaves the app unconstrained.
   public var appPattern: String?
 
   /// Wildcard pattern matched against the resolved bundle identifier
@@ -37,8 +39,9 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   /// across user-facing renames matters.
   public var bundleIDPattern: String?
 
-  /// Wildcard pattern matched against the banner's title line. Nil or
-  /// empty leaves the title unconstrained.
+  /// Wildcard pattern matched against the banner's title line.
+  ///
+  /// Nil or empty leaves the title unconstrained.
   public var titlePattern: String?
 
   /// Wildcard pattern matched against the banner's subtitle line.

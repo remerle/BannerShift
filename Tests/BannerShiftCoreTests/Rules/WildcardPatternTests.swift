@@ -17,5 +17,5 @@ import Testing
 }
 
 @Test func emptyWildcardProducesEmptyPattern() {
-  #expect(WildcardPattern.regexPattern(from: "") == "")
+  #expect(WildcardPattern.regexPattern(from: "").isEmpty)
 }
