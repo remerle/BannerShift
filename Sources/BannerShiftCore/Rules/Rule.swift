@@ -50,6 +50,11 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   /// Wildcard pattern matched against the banner's body text.
   public var bodyPattern: String?
 
+  /// When true, a matching banner is also captured into the always-on-top
+  /// pinned-notifications list, in addition to any repositioning the rule
+  /// performs. Defaults to false.
+  public var pinsToList: Bool
+
   /// Position to move the matched banner to.
   ///
   /// Nil falls back to the global default selected from the menu bar.
@@ -72,6 +77,7 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
     titlePattern: String? = nil,
     subtitlePattern: String? = nil,
     bodyPattern: String? = nil,
+    pinsToList: Bool = false,
     position: Position? = nil,
     animation: Animation? = nil
   ) {
@@ -83,6 +89,7 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
     self.titlePattern = titlePattern
     self.subtitlePattern = subtitlePattern
     self.bodyPattern = bodyPattern
+    self.pinsToList = pinsToList
     self.position = position
     self.animation = animation
   }
