@@ -142,7 +142,7 @@ final class AXObserverController {
       // log everything else so a fast-dismissing banner that returns
       // `kAXErrorInvalidUIElement` produces a diagnostic trail rather than
       // silently missing its events.
-      if err != .success && err.rawValue != Constants.axErrorNotificationAlreadyRegistered {
+      if err != .success && err != .notificationAlreadyRegistered {
         logger.error(
           "AXObserverController: AXObserverAddNotification failed for \(notif) (\(err.rawValue))"
         )
