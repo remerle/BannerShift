@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Typed accessor for the small set of values BannerShift persists in
@@ -17,6 +18,9 @@ public final class Preferences {
 
   /// `UserDefaults` key for the debug-logging toggle.
   public static let debugLoggingKey = "debugLoggingEnabled"
+
+  /// `UserDefaults` key for the pinned-list panel's saved frame origin.
+  public static let pinnedPanelOriginKey = "pinnedPanelOrigin"
 
   private let defaults: UserDefaults
 
@@ -58,5 +62,27 @@ public final class Preferences {
   public var debugLoggingEnabled: Bool {
     get { defaults.bool(forKey: Self.debugLoggingKey) }
     set { defaults.set(newValue, forKey: Self.debugLoggingKey) }
+  }
+
+  /// Saved origin of the pinned-list panel, or nil if the user has never moved it.
+  ///
+  /// Stored as `"x,y"`. Only the window position is persisted;
+  /// no notification content is ever written to defaults.
+  public var pinnedPanelOrigin: CGPoint? {
+    get {
+      guard let raw = defaults.string(forKey: Self.pinnedPanelOriginKey) else { return nil }
+      let parts = raw.split(separator: ",")
+      guard parts.count == 2, let x = Double(parts[0]), let y = Double(parts[1]) else {
+        return nil
+      }
+      return CGPoint(x: x, y: y)
+    }
+    set {
+      guard let newValue else {
+        defaults.removeObject(forKey: Self.pinnedPanelOriginKey)
+        return
+      }
+      defaults.set("\(newValue.x),\(newValue.y)", forKey: Self.pinnedPanelOriginKey)
+    }
   }
 }
