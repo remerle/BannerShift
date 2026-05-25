@@ -23,7 +23,8 @@
 - `Sources/BannerShift/UI/RuleEditSheetController.swift` — **modify**: "Also pin…" checkbox.
 - `Tests/BannerShiftCoreTests/Rules/RuleTests.swift` — **modify**: pinsToList default + round-trip.
 - `Tests/BannerShiftCoreTests/Reminders/PinnedListTests.swift` — **create**: list behavior.
-- `CHANGELOG.md` — **modify**: `Added` entries.
+
+> No `CHANGELOG.md` change: nothing has shipped yet, so the changelog is left untouched until release.
 
 ---
 
@@ -49,14 +50,6 @@ Append to `Tests/BannerShiftCoreTests/Rules/RuleTests.swift`:
   #expect(back == rule)
   #expect(back.pinsToList == true)
 }
-
-@Test func ruleDecodesLegacyJSONWithoutPinsToList() throws {
-  // A rule persisted before pinsToList existed has no such key; it must
-  // decode with pinsToList == false (backward compatibility).
-  let legacy = #"{"id":"x","name":"Old","enabled":true}"#.data(using: .utf8)!
-  let back = try JSONDecoder().decode(Rule.self, from: legacy)
-  #expect(back.pinsToList == false)
-}
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -66,13 +59,14 @@ Expected: compile failure — `Rule` has no `pinsToList` parameter/member.
 
 - [ ] **Step 3: Add the field to `Rule`**
 
+Synthesized `Codable` is used as-is (no custom decoder). Backward compatibility is **not** a goal: a rule blob persisted before this field existed will fail to decode, and `RuleStore.load()` already treats a decode failure by starting empty. New rules round-trip normally.
+
 In `Sources/BannerShiftCore/Rules/Rule.swift`, add the stored property after `bodyPattern` (after line 51) and before `position`:
 
 ```swift
   /// When true, a matching banner is also captured into the always-on-top
   /// pinned-notifications list, in addition to any repositioning the rule
-  /// performs. Defaults to false; a legacy rule persisted before this field
-  /// existed decodes as false.
+  /// performs. Defaults to false.
   public var pinsToList: Bool
 ```
 
@@ -90,52 +84,18 @@ And assign it in the body (after `self.bodyPattern = bodyPattern`):
     self.pinsToList = pinsToList
 ```
 
-> Note: `Bool` is non-optional with a default. For the legacy-JSON test to pass, `Rule` must decode a missing key as `false`. Swift's synthesized `Codable` does **not** treat a missing non-optional key as a default — it throws. So change the type to keep synthesis working by making decoding tolerant: implement `pinsToList` as `Bool` but add a custom `init(from:)` is heavy. Instead, declare it `public var pinsToList: Bool` and add the decode tolerance below.
-
-- [ ] **Step 4: Make legacy decode tolerant**
-
-Synthesized `Codable` throws on a missing key for a non-optional `Bool`. Add a custom `Decodable` initializer to `Rule` that defaults the new key (keep the synthesized `Encodable`). Append inside the `Rule` struct:
-
-```swift
-  // Custom decode so rules persisted before `pinsToList` existed (no such
-  // key in the JSON) decode with `pinsToList == false` rather than throwing.
-  // All other keys use the synthesized coding keys.
-  private enum CodingKeys: String, CodingKey {
-    case id, name, enabled, appPattern, bundleIDPattern, titlePattern
-    case subtitlePattern, bodyPattern, pinsToList, position, animation
-  }
-
-  public init(from decoder: Decoder) throws {
-    let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decode(String.self, forKey: .id)
-    name = try c.decode(String.self, forKey: .name)
-    enabled = try c.decode(Bool.self, forKey: .enabled)
-    appPattern = try c.decodeIfPresent(String.self, forKey: .appPattern)
-    bundleIDPattern = try c.decodeIfPresent(String.self, forKey: .bundleIDPattern)
-    titlePattern = try c.decodeIfPresent(String.self, forKey: .titlePattern)
-    subtitlePattern = try c.decodeIfPresent(String.self, forKey: .subtitlePattern)
-    bodyPattern = try c.decodeIfPresent(String.self, forKey: .bodyPattern)
-    pinsToList = try c.decodeIfPresent(Bool.self, forKey: .pinsToList) ?? false
-    position = try c.decodeIfPresent(Position.self, forKey: .position)
-    animation = try c.decodeIfPresent(Animation.self, forKey: .animation)
-  }
-```
-
-> The explicit `CodingKeys` keeps the synthesized `Encodable` emitting the same key names, so encode/decode stay symmetric.
-
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `make test 2>&1 | tail -20`
-Expected: PASS, including the three new tests and the existing `ruleCodableRoundTrip` / `ruleCodableHandlesNilFields`.
+Expected: PASS, including the two new tests and the existing `ruleCodableRoundTrip` / `ruleCodableHandlesNilFields`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add Sources/BannerShiftCore/Rules/Rule.swift Tests/BannerShiftCoreTests/Rules/RuleTests.swift
 git commit -m "Add additive pinsToList flag to Rule
 
-- New Bool field, defaults to false
-- Custom Decodable so legacy rules without the key decode as false"
+- New Bool field, defaults to false; synthesized Codable (no bw-compat)"
 ```
 
 ---
@@ -924,36 +884,12 @@ git add Sources/BannerShift/UI/RuleEditSheetController.swift
 git commit -m "Add 'Also pin to the always-on-top list' option to rule editor"
 ```
 
----
-
-## Task 8: Changelog
-
-**Files:**
-- Modify: `CHANGELOG.md`
-
-- [ ] **Step 1: Add entries under `## [Unreleased]` → `### Added`**
-
-In `CHANGELOG.md`, under the existing `### Added` group in `## [Unreleased]`, add:
-
-```markdown
-- An always-on-top window that pins matching notifications and keeps them on
-  screen after their banner disappears. Pinned items can be dismissed one at a
-  time or all at once with "Dismiss All", and clicking one opens its source
-  app. The window stays in memory only and is cleared on quit.
-- A "Also pin to the always-on-top list" option in the rule editor, so a rule
-  can pin a banner in addition to repositioning it.
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add CHANGELOG.md
-git commit -m "Changelog: always-on-top pinned notifications list"
-```
+> **Changelog:** intentionally not updated. Nothing has shipped yet; the
+> changelog is populated at release time, not incrementally during v1 work.
 
 ---
 
-## Task 9: Validate and manually verify
+## Task 8: Validate and manually verify
 
 **Files:** none (verification only)
 
@@ -995,5 +931,5 @@ Expected: no new `unused_declaration` / `unused_import` findings attributable to
 
 ## Self-review notes
 
-- **Spec coverage:** additive flag (Task 1, 7), in-memory only / no disk for content (Tasks 3, 5 — only the panel origin is persisted), visible-when-non-empty (Task 5 `render`), always-on-top non-activating (Task 5 panel config), collapse by (app,title) with count + newest body (Task 3), newest-on-top + re-pin bump (Task 3), row click activates app (Task 5), draggable + remembered (Task 5 + Preferences), cap (Task 3), idempotency per banner (Task 4 first-sight), changelog (Task 8), Core tests exhaustive / exec manual (Tasks 3, 9). All covered.
+- **Spec coverage:** additive flag (Task 1, 7), in-memory only / no disk for content (Tasks 3, 5 — only the panel origin is persisted), visible-when-non-empty (Task 5 `render`), always-on-top non-activating (Task 5 panel config), collapse by (app,title) with count + newest body (Task 3), newest-on-top + re-pin bump (Task 3), row click activates app (Task 5), draggable + remembered (Task 5 + Preferences), cap (Task 3), idempotency per banner (Task 4 first-sight), Core tests exhaustive / exec manual (Tasks 3, 8). All covered. Changelog deliberately omitted (nothing released yet).
 - **Type consistency:** `CapturedNotification(appName:bundleID:title:body:)`, `PinnedItem(id:appName:bundleID:title:body:count:)`, `PinnedList.pin/dismiss(id:)/dismissAll/isEmpty/items`, `Rule.pinsToList`, `Preferences.pinnedPanelOrigin`, `BannerMover(onPin:)`, `ReminderController(preferences:).capture(_:)` are used consistently across tasks.

@@ -86,8 +86,10 @@ Add one field:
 public var pinsToList: Bool   // defaults to false
 ```
 
-`Codable` with a `false` default is backward-compatible: existing persisted
-rules decode with `pinsToList == false`.
+Synthesized `Codable`, no custom decoder. Backward compatibility is **not** a
+goal (nothing has shipped): a rule blob persisted before this field existed
+fails to decode, and `RuleStore.load()` already starts empty on a decode
+failure. New rules round-trip normally.
 
 ### Core: `Sources/BannerShiftCore/Reminders/` (new)
 
@@ -218,12 +220,8 @@ executable target has no unit tests).
 
 ## Changelog
 
-`Added`:
-
-- An always-on-top list that pins matching notifications and keeps them on
-  screen after their banner disappears, with per-row dismiss and "Dismiss All".
-- Clicking a pinned item opens its source app.
-- A "Also pin to the always-on-top list" option in the rule editor.
+Not updated as part of this work. Nothing has shipped yet; the changelog is
+populated at release time, not incrementally during v1 development.
 
 ## Security
 
