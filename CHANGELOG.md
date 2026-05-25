@@ -11,8 +11,17 @@ truth and is injected into the app bundle at build time. See
 
 ## [Unreleased]
 
+### Added
+
+- Choose… buttons on the App and Bundle ID fields in the rule editor to pick an
+  installed app instead of typing its name or identifier.
+
 ### Changed
 
+- Rule fields now use simple wildcards (`*` matches any run of characters;
+  everything else is literal) instead of regular expressions. A rule with no
+  criteria specified now matches nothing rather than every notification, and
+  multiple specified fields are combined with AND.
 - When a test notification can't be sent because notifications are disabled, the
   alert now offers an "Open Settings" button that jumps to the Notifications
   pane in System Settings.
