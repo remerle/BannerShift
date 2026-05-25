@@ -1,4 +1,3 @@
-import AppKit
 import ServiceManagement
 
 /// BannerShift's view of its login-item registration, mapped from

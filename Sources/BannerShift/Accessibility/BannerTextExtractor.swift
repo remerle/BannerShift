@@ -1,7 +1,6 @@
 import ApplicationServices
 import BannerShiftCore
 import CoreGraphics
-import Foundation
 
 /// Reads the visible text of a banner out of its Accessibility subtree
 /// and packs it into a `BannerText` for rule matching.

@@ -1,5 +1,3 @@
-import Foundation
-
 /// Motion style applied as a banner is repositioned.
 ///
 /// Encoded as a raw `String` so the persisted form survives reordering

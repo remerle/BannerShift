@@ -1,5 +1,3 @@
-import Foundation
-
 /// Translates a user-facing wildcard pattern into a regex pattern string.
 ///
 /// BannerShift rule fields accept simple wildcards rather than full regular

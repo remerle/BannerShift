@@ -1,5 +1,3 @@
-import Foundation
-
 /// An immutable snapshot of one captured banner, handed to `PinnedList`.
 ///
 /// Carries the same notification text the matcher sees, so treat it as

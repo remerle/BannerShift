@@ -1,5 +1,3 @@
-import Foundation
-
 /// Extracted text content of a banner, in the shape `RuleMatcher`
 /// expects.
 ///

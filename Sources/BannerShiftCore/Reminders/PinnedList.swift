@@ -1,5 +1,3 @@
-import Foundation
-
 /// One row in the pinned-notifications list: a collapsed group of banners
 /// sharing a `(bundleID ?? lowercased appName, title)` key, with an
 /// occurrence `count` and a stable `id` for the UI.

@@ -1,5 +1,3 @@
-import Foundation
-
 /// One of nine grid cells a banner can be repositioned to: a 3x3 grid
 /// of horizontal (left/center/right) and vertical (top/middle/bottom)
 /// anchors.
