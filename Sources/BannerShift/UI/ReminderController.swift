@@ -72,11 +72,17 @@ final class ReminderController: NSObject, NSWindowDelegate {
     }
     stack.addArrangedSubview(footerView())
 
-    // Compute accurate fitting height before sizing the panel.
+    // Give the clip view a resolved width before measuring: on the first
+    // render the panel has never been laid out, so the stack's width (tied to
+    // the clip view) is still 0 and `fittingSize.height` would be degenerate.
+    // A generous scratch height establishes the 320pt content width first.
+    panel.setContentSize(NSSize(width: 320, height: 4000))
     stack.layoutSubtreeIfNeeded()
     let contentHeight = stack.fittingSize.height
     let screen = panel.screen ?? NSScreen.main
-    let maxHeight = (screen?.visibleFrame.height ?? 800) - 80
+    // Floor the cap so a pathologically short screen can't yield a negative
+    // (which setContentSize would clamp to a title-bar-only sliver).
+    let maxHeight = max(100, (screen?.visibleFrame.height ?? 800) - 80)
     panel.setContentSize(NSSize(width: 320, height: min(contentHeight, maxHeight)))
 
     // Apply the default top-right placement once, after the panel has its real
@@ -195,10 +201,12 @@ final class ReminderController: NSObject, NSWindowDelegate {
       scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
       scrollView.topAnchor.constraint(equalTo: content.topAnchor),
       scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-      // Stack fills the clip view's width so only vertical scrolling occurs.
+      // Stack matches the clip view's width (pinned leading) so only vertical
+      // scrolling occurs. Width + leading fully determine the horizontal axis;
+      // a trailing constraint too would over-determine it and risk solver noise
+      // as the clip view's width changes during scroll.
       stack.widthAnchor.constraint(equalTo: clipView.widthAnchor),
       stack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
       stack.topAnchor.constraint(equalTo: clipView.topAnchor),
       // No bottom constraint: lets the stack grow past the clip view's height,
       // which is what makes vertical scrolling possible.
