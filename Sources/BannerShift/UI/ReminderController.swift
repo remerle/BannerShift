@@ -14,7 +14,12 @@ final class ReminderController: NSObject, NSWindowDelegate {
   private var list = PinnedList()
   private let preferences: Preferences
   private var panel: NSPanel?
-  private var stack: NSStackView?
+  private let stack = NSStackView()
+  /// True once the panel has been placed at its initial top-right default.
+  ///
+  /// Prevents re-snapping to top-right when the panel resizes after the
+  /// user has dragged it to a different position.
+  private var hasPositioned = false
 
   init(preferences: Preferences) {
     self.preferences = preferences
@@ -50,19 +55,37 @@ final class ReminderController: NSObject, NSWindowDelegate {
   // MARK: Rendering
 
   /// Rebuild the row views from the current list and show or hide the panel.
+  ///
+  /// After rebuilding the rows the panel is resized to fit its content, capped
+  /// to the visible screen height so it never exceeds the display. When no
+  /// saved origin exists the panel is placed at the top-right of the screen
+  /// AFTER sizing, so the placement uses the real panel dimensions.
   private func render() {
     if list.isEmpty {
       panel?.orderOut(nil)
       return
     }
     let panel = ensurePanel()
-    let stack = self.stack ?? NSStackView()
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
     for item in list.items {
       stack.addArrangedSubview(rowView(for: item))
     }
     stack.addArrangedSubview(footerView())
-    panel.layoutIfNeeded()
+
+    // Compute accurate fitting height before sizing the panel.
+    stack.layoutSubtreeIfNeeded()
+    let contentHeight = stack.fittingSize.height
+    let screen = panel.screen ?? NSScreen.main
+    let maxHeight = (screen?.visibleFrame.height ?? 800) - 80
+    panel.setContentSize(NSSize(width: 320, height: min(contentHeight, maxHeight)))
+
+    // Apply the default top-right placement once, after the panel has its real
+    // size. Subsequent renders keep the user's dragged position.
+    if !hasPositioned && preferences.pinnedPanelOrigin == nil {
+      positionTopRight(panel)
+      hasPositioned = true
+    }
+
     panel.orderFrontRegardless()  // show without activating BannerShift
   }
 
@@ -70,7 +93,7 @@ final class ReminderController: NSObject, NSWindowDelegate {
   ///
   /// Clicking the row (outside the button) opens the app.
   private func rowView(for item: PinnedItem) -> NSView {
-    let appTitle = item.count > 1 ? "\(item.appName) ·\(item.count)" : item.appName
+    let appTitle = item.count > 1 ? "\(item.appName) · \(item.count)" : item.appName
     let appLabel = makeLabel(appTitle, weight: .semibold, size: 12)
     let titleLabel = makeLabel(item.title, weight: .regular, size: 12)
     let bodyLabel = makeLabel(item.body, weight: .regular, size: 11)
@@ -123,16 +146,27 @@ final class ReminderController: NSObject, NSWindowDelegate {
   // MARK: Panel construction
 
   /// Lazily build the floating panel, restoring its saved origin.
+  ///
+  /// The row stack lives inside a vertical `NSScrollView` so the panel can cap
+  /// its height to the screen and still let the user scroll through long lists.
+  /// Panel sizing is deferred to `render()` so the first placement uses the
+  /// real content height.
   private func ensurePanel() -> NSPanel {
     if let panel { return panel }
 
-    let stack = NSStackView()
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 0
     stack.edgeInsets = NSEdgeInsets(top: 8, left: 0, bottom: 0, right: 0)
     stack.translatesAutoresizingMaskIntoConstraints = false
-    self.stack = stack
+
+    let scrollView = NSScrollView()
+    scrollView.hasVerticalScroller = true
+    scrollView.drawsBackground = false
+    scrollView.borderType = .noBorder
+    scrollView.automaticallyAdjustsContentInsets = false
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    scrollView.documentView = stack
 
     let panel = NSPanel(
       contentRect: NSRect(x: 0, y: 0, width: 320, height: 120),
@@ -140,34 +174,56 @@ final class ReminderController: NSObject, NSWindowDelegate {
       backing: .buffered, defer: false)
     panel.title = "Pinned Notifications"
     panel.isFloatingPanel = true
-    panel.level = .floating
     panel.hidesOnDeactivate = false
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     panel.isReleasedWhenClosed = false
     panel.delegate = self
 
-    guard let content = panel.contentView else { return panel }
-    content.addSubview(stack)
+    // NSPanel always provides a contentView for a buffered (non-deferred)
+    // panel. A nil here indicates a serious AppKit initialisation failure;
+    // bail loudly rather than silently producing a broken UI.
+    guard let content = panel.contentView else {
+      preconditionFailure("NSPanel has no contentView after buffered init")
+    }
+    content.addSubview(scrollView)
+
+    let clipView = scrollView.contentView
+
     NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-      stack.topAnchor.constraint(equalTo: content.topAnchor),
-      stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-      content.widthAnchor.constraint(equalToConstant: 320),
+      // Scroll view fills the panel's content area.
+      scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+      scrollView.topAnchor.constraint(equalTo: content.topAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+      // Stack fills the clip view's width so only vertical scrolling occurs.
+      stack.widthAnchor.constraint(equalTo: clipView.widthAnchor),
+      stack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: clipView.topAnchor),
+      // No bottom constraint: lets the stack grow past the clip view's height,
+      // which is what makes vertical scrolling possible.
     ])
 
+    // Restore a previously saved dragged position. If none exists, the default
+    // top-right placement is applied in render() after the panel is sized.
     if let origin = preferences.pinnedPanelOrigin {
       panel.setFrameOrigin(origin)
-    } else {
-      positionTopRight(panel)
+      hasPositioned = true
     }
+
     self.panel = panel
     return panel
   }
 
   /// Default placement: top-right of the main screen's visible area.
+  ///
+  /// Falls back to `panel.center()` when `NSScreen.main` is unavailable
+  /// (e.g. the display list is momentarily empty during sleep/wake).
   private func positionTopRight(_ panel: NSPanel) {
-    guard let screen = NSScreen.main else { return }
+    guard let screen = NSScreen.main else {
+      panel.center()
+      return
+    }
     let visible = screen.visibleFrame
     let size = panel.frame.size
     let origin = CGPoint(
