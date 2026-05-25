@@ -51,8 +51,9 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   public var bodyPattern: String?
 
   /// When true, a matching banner is also captured into the always-on-top
-  /// pinned-notifications list, in addition to any repositioning the rule
-  /// performs. Defaults to false.
+  /// pinned-notifications list, in addition to any repositioning the rule performs.
+  ///
+  /// Defaults to false.
   public var pinsToList: Bool
 
   /// Position to move the matched banner to.

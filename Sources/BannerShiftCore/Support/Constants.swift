@@ -126,4 +126,12 @@ public enum Constants {
   /// inputs (rendering bug, malformed AX text, or an adversarially
   /// constructed notification).
   public static let maxBannerMatchSubjectLength: Int = 4096
+
+  /// Maximum number of rows the pinned-notifications list retains.
+  ///
+  /// Bounds memory and panel height against a chatty app. When a new group
+  /// would exceed this, the oldest group (at the bottom of the newest-first
+  /// list) is evicted. 50 comfortably covers a realistic backlog of pinned
+  /// reminders without the panel growing past a screen.
+  public static let maxPinnedItems: Int = 50
 }
