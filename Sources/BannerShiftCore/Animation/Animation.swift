@@ -4,11 +4,11 @@ import Foundation
 ///
 /// Encoded as a raw `String` so the persisted form survives reordering
 /// of cases. `.none` snaps directly to the target with no animation;
-/// `.slide` interpolates from the OS-original origin; `.shake` and
-/// `.bounce` oscillate around the target after snapping there first.
+/// `.shake` snaps to the target then vibrates horizontally in bursts
+/// separated by pauses; `.bounce` snaps to the target then springs upward
+/// in repeated gravity-like hops.
 public enum Animation: String, CaseIterable, Sendable, Codable {
   case none
-  case slide
   case shake
   case bounce
 
@@ -16,7 +16,6 @@ public enum Animation: String, CaseIterable, Sendable, Codable {
   public var displayName: String {
     switch self {
     case .none: return "None"
-    case .slide: return "Slide"
     case .shake: return "Shake"
     case .bounce: return "Bounce"
     }

@@ -18,6 +18,12 @@ truth and is injected into the app bundle at build time. See
   pane in System Settings.
 - Repeated test notifications now reliably show a banner every time, instead of
   only on the first send after launch.
+- The Shake animation now shakes in bursts with pauses between them, and Bounce
+  springs upward in repeated hops rather than a single wobble.
+
+### Removed
+
+- The `slide` animation option.
 
 ### Fixed
 

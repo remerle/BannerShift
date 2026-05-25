@@ -12,8 +12,8 @@ import CoreGraphics
 public struct BannerWindowSnapshot: Equatable, Sendable {
   /// Window origin as the OS placed it before any reposition.
   ///
-  /// Used as the slide animation's starting point and as the restore
-  /// target when the banner is dismissed.
+  /// Used as the restore target when a window we moved turns out to be the
+  /// Notification Center panel and must be put back.
   public let originalOrigin: CGPoint
 
   /// Window frame at first sight.

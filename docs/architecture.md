@@ -77,7 +77,7 @@ flowchart TD
     G --> H[AppResolver<br/>app name to bundle ID]
     H --> I[RuleMatcher<br/>first matching rule]
     I --> J[PositionCalculator<br/>target screen origin]
-    J --> K[Animator<br/>none / slide / shake / bounce]
+    J --> K[Animator<br/>none / shake / bounce]
     K --> L[AX position write]
 ```
 
@@ -125,8 +125,8 @@ flowchart TD
    - dispatches the move through **`Animator`**.
 
 5. **`Animator`** writes the AX position attribute. `none` snaps to the target;
-   `slide` interpolates from the original origin to the target; `shake`/`bounce`
-   snap to target then oscillate. Frame schedules are precomputed by
+   `shake`/`bounce` snap to target then oscillate around it (horizontal bursts
+   and upward hops, respectively). Frame schedules are precomputed by
    `AnimationFrames` (Core) and dispatched as `DispatchWorkItem`s on the main
    queue at precomputed deadlines — nothing is allocated per frame. When a banner
    disappears, `BannerMover` restores the window's original position and drops

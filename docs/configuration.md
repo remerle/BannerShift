@@ -83,9 +83,8 @@ Middle and bottom positions are padded `30 pt` clear of the Dock.
 | Stored value | Menu label | Behavior |
 | --- | --- | --- |
 | `none` | None | Snap straight to the target position. |
-| `slide` | Slide | Slide from the original spot to the target (~0.2 s). |
-| `shake` | Shake | Snap to target, then oscillate horizontally (~0.25 s). |
-| `bounce` | Bounce | Snap to target, then oscillate vertically (~0.25 s). |
+| `shake` | Shake | Snap to target, then shake horizontally in bursts separated by pauses. |
+| `bounce` | Bounce | Snap to target, then spring upward in repeated gravity-like hops. |
 
 Animations start after a short delay (~0.15 s) so they don't fight the OS's own
 banner entry animation, and run at 60 fps from a precomputed frame schedule.

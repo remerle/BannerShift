@@ -29,8 +29,9 @@ import CoreGraphics
 /// by AX element identity (`elementID`). The snapshot is captured on the
 /// first move and reused on later passes as the *stable baseline*, so the
 /// target is computed from the banner's resting geometry and never drifts
-/// as repeated passes observe the already-moved frame; it also supplies
-/// the slide animation's start origin. The notification UI hands out a
+/// as repeated passes observe the already-moved frame; its `originalOrigin`
+/// also lets `restoreMisMovedPanel` put back a window that turned out to be
+/// the Notification Center panel. The notification UI hands out a
 /// fresh, short-lived window per banner — the OS resets it to the origin
 /// for the next banner and destroys the old one — so the mover never
 /// moves a window back; on dismiss it just drops the snapshot (keeping the
@@ -167,6 +168,9 @@ final class BannerMover {
       )
       return
     }
+    // Record the resting baseline on first sight so later passes compute the
+    // target from the original geometry (see `makeCalculator`) instead of the
+    // already-moved frame, even though the move itself anchors to `target`.
     if windowSnapshots[id] == nil {
       windowSnapshots[id] = BannerWindowSnapshot(
         originalOrigin: windowFrame.origin,
@@ -174,10 +178,8 @@ final class BannerMover {
         bannerFrame: bannerFrame
       )
     }
-    guard let snapshot = windowSnapshots[id] else { return }
     let target = calc.targetOrigin(for: resolved.position)
-    dispatchAnimation(
-      resolved.animation, windowID: id, window: window, snapshot: snapshot, target: target)
+    dispatchAnimation(resolved.animation, windowID: id, window: window, target: target)
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
@@ -278,34 +280,25 @@ final class BannerMover {
   /// only defer the move by an extra run-loop turn. For shake/bounce the
   /// banner likewise snaps to the target *immediately* (so the OS-default
   /// location is never briefly visible), and only the oscillation waits
-  /// 150 ms for the OS's own banner-entry animation to finish. Slide is the
-  /// exception: its first frame is the OS-original position, so it must wait
-  /// the 150 ms before any frame fires.
+  /// 150 ms for the OS's own banner-entry animation to finish.
   private func dispatchAnimation(
     _ animation: Animation,
     windowID: UInt64,
     window: AXUIElement,
-    snapshot: BannerWindowSnapshot,
     target: CGPoint
   ) {
     switch animation {
     case .none:
       // Cancel any in-flight animation for this window (a superseded
-      // slide/shake) so it can't keep writing frames, then move now. This
+      // shake/bounce) so it can't keep writing frames, then move now. This
       // is what `animator.animate` would do internally, minus the extra
       // asyncAfter hop that a zero-offset frame schedule incurs.
       animator.cancel(windowID: windowID)
       Animator.set(point: target, on: window)
 
-    case .slide:
-      let frames = AnimationFrames.frames(
-        style: .slide, from: snapshot.originalOrigin, to: target)
-      animator.animate(
-        windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
-
     case .shake, .bounce:
       Animator.set(point: target, on: window)
-      let frames = AnimationFrames.frames(style: animation, from: target, to: target)
+      let frames = AnimationFrames.frames(style: animation, to: target)
       animator.animate(
         windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)
     }
