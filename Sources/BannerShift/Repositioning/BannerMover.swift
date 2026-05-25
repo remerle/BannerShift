@@ -166,7 +166,9 @@ final class BannerMover {
     // structural full-display-container invariant (broken by a macOS layout
     // change). Nothing needs to "settle": because we move the container and
     // the banner rides along to its known resting offset, the move can fire
-    // on first detection.
+    // on first detection. Bailing here also skips pinning (the `onPin` call
+    // lives in the first-sight block below): with no reliable geometry we are
+    // not repositioning the banner, so we do not capture it either.
     guard calc.invariantHolds else {
       logger.error(
         "BannerMover: full-display container invariant broken; skipping move. "
@@ -261,7 +263,9 @@ final class BannerMover {
   ///
   /// Returns the position and animation the matched rule overrides to,
   /// falling back to `defaultPosition` and `.none` when no rule matches,
-  /// plus a human-readable rule name for diagnostic logging.
+  /// plus a human-readable rule name for diagnostic logging. Also populates
+  /// `pinned` with the captured banner text when the matched rule has
+  /// `pinsToList` set, and nil otherwise (including the no-rule fast path).
   private func resolvePositionAndAnimation(
     banner: AXUIElement, rules: [Rule], defaultPosition: Position
   ) -> ResolvedMatch {
