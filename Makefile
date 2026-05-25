@@ -48,8 +48,17 @@ lint: ## Lint sources: swift-format (formatting) + SwiftLint (semantic rules). N
 	swift package --disable-sandbox plugin --allow-writing-to-package-directory swiftlint lint --strict --quiet
 
 .PHONY: analyze
-analyze: ## Slow: SwiftLint analyzer rules (unused_declaration, unused_import). Requires full Xcode for SourceKit. Not in `validate`.
-	swift package --disable-sandbox plugin --allow-writing-to-package-directory swiftlint analyze --strict --quiet
+analyze: ## Slow: SwiftLint analyzer rules (unused_declaration, unused_import). Requires full Xcode. Not in `validate`.
+	@# SwiftLint's analyzer rules need the compiler invocations. SwiftPM only
+	@# emits them on a from-scratch verbose build, so build into a dedicated
+	@# path that we wipe first (an incremental build would log nothing and the
+	@# analyzer would fail with "Could not read compiler invocations").
+	@mkdir -p .build
+	@rm -rf .build/analyze
+	swift build --build-tests --verbose --build-path .build/analyze > .build/analyze.log 2>&1 \
+		|| { tail -n 30 .build/analyze.log; echo "analyze: build failed (see .build/analyze.log)"; exit 1; }
+	swift package --disable-sandbox plugin --allow-writing-to-package-directory \
+		swiftlint analyze --strict --quiet --compiler-log-path .build/analyze.log
 
 .PHONY: format-check
 format-check: lint ## (alias) Same as `make lint`; kept for muscle memory.
