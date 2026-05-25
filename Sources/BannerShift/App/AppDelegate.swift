@@ -22,6 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// Set as the notification-center delegate at launch; see
   /// `TestNotificationPresenter`.
   private let notificationPresenter = TestNotificationPresenter()
+  /// Owns the pinned-notifications list and its always-on-top panel. Built
+  /// here at property-init (it only needs `Preferences`, which reads live
+  /// from `UserDefaults`) and fed by `BannerMover`'s `onPin` callback.
+  private let reminderController = ReminderController(preferences: Preferences())
 
   // Late-init dependencies. Nil until `applicationDidFinishLaunching`
   // wires them up; nil also after a fail-fast termination during that
@@ -98,7 +102,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       preferences: preferences,
       ruleStore: ruleStore,
       matcher: matcher,
-      animator: animator
+      animator: animator,
+      onPin: { [weak self] captured in self?.reminderController.capture(captured) }
     )
     self.mover = mover
     self.debouncer = Debouncer(interval: Constants.eventDebounceInterval, queue: .main)
