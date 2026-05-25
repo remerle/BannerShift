@@ -2,6 +2,7 @@ import AppKit
 import BannerShiftCore
 import Foundation
 import OSLog
+import UserNotifications
 
 /// Application entry point and lifecycle owner.
 ///
@@ -15,6 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let preferences = Preferences()
   private let osLog = Logger(subsystem: Constants.bundleIdentifier, category: "app")
   private let animator = Animator()
+  /// Retained delegate that requests banner presentation for our test
+  /// notification if it is ever delivered while the app is frontmost.
+  ///
+  /// Set as the notification-center delegate at launch; see
+  /// `TestNotificationPresenter`.
+  private let notificationPresenter = TestNotificationPresenter()
 
   // Late-init dependencies. Nil until `applicationDidFinishLaunching`
   // wires them up; nil also after a fail-fast termination during that
@@ -40,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // assigns to self. Downstream steps reference the locals so the
     // chain is checked by the compiler rather than relying on
     // self-properties being non-nil.
+
+    // Present our test notification as a banner even when frontmost.
+    UNUserNotificationCenter.current().delegate = notificationPresenter
 
     // 1. File logger first so subsequent errors can be recorded.
     let logsDir = FileManager.default

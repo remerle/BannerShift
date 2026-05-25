@@ -38,20 +38,39 @@ enum TestNotification {
     }
   }
 
-  // Stable identifier so repeated "Send a Test Notification" invocations
-  // replace the prior delivery in Notification Center rather than
-  // accumulating distinct entries the user has to dismiss one by one.
-  private static let identifier = "\(Constants.bundleIdentifier).test"
-
   private static func post(positionName: String) {
     let content = UNMutableNotificationContent()
     content.title = "BannerShift"
     content.subtitle = positionName
     content.body = "If you can see this in the chosen position, it's working."
     let center = UNUserNotificationCenter.current()
-    center.removeDeliveredNotifications(withIdentifiers: [identifier])
+    // Two macOS behaviours conspire to make repeated test sends "only work the
+    // first time" unless we both vary the id and clear prior deliveries:
+    //   1. Re-posting the *same* identifier updates the existing Notification
+    //      Center entry in place without re-alerting — no new banner.
+    //   2. A new notification posted while a previous one from the same app is
+    //      still sitting in Notification Center can be coalesced into that group
+    //      and delivered silently instead of as a banner.
+    // So: clear any prior test delivery first, then post a fresh unique id.
+    // BannerShift posts *only* this test notification, so clearing all of our
+    // delivered notifications is exactly "remove my earlier test banners."
+    center.removeAllDeliveredNotifications()
+    let identifier = "\(Constants.bundleIdentifier).test.\(UUID().uuidString)"
     let req = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
-    center.add(req, withCompletionHandler: nil)
+
+    // A banner only draws while BannerShift is a *background* app. When it is
+    // the active app (e.g. the rules editor is frontmost), macOS routes the
+    // notification to `willPresent`, and for an LSUIElement agent the forced
+    // `.banner` there does not render — the test would silently do nothing.
+    // Resign active first, then post once the app has actually given it up
+    // (deactivation lands on a later run-loop turn). When already in the
+    // background, post immediately so the banner isn't needlessly delayed.
+    if NSApp.isActive {
+      NSApp.deactivate()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { center.add(req) }
+    } else {
+      center.add(req)
+    }
   }
 
   private static func showDeniedAlert() {
@@ -79,5 +98,29 @@ enum TestNotification {
       let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")
     else { return }
     NSWorkspace.shared.open(url)
+  }
+}
+
+/// Requests banner presentation for BannerShift's own notifications.
+///
+/// macOS suppresses a notification's banner when its app is active, routing it
+/// to Notification Center instead and calling this delegate to ask how to
+/// present. The primary fix for "Send a Test Notification" is to post while the
+/// app is backgrounded (see `TestNotification.post`), where the banner draws
+/// normally; for an `LSUIElement` agent the forced `.banner` here does not
+/// reliably render while active. This delegate is the belt-and-suspenders:
+/// should a delivery ever arrive while foreground, it still asks for the
+/// banner rather than letting macOS drop it silently. BannerShift posts only
+/// the test notification, so presenting every delivery is correct here.
+///
+/// Set as `UNUserNotificationCenter.current().delegate` during launch and
+/// retained by `AppDelegate`.
+final class TestNotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+  func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .sound, .list])
   }
 }

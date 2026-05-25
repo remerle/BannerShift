@@ -16,6 +16,8 @@ truth and is injected into the app bundle at build time. See
 - When a test notification can't be sent because notifications are disabled, the
   alert now offers an "Open Settings" button that jumps to the Notifications
   pane in System Settings.
+- Repeated test notifications now reliably show a banner every time, instead of
+  only on the first send after launch.
 
 ### Fixed
 
