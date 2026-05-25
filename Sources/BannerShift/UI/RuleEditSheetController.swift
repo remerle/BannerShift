@@ -1,16 +1,19 @@
 import AppKit
 import BannerShiftCore
+import UniformTypeIdentifiers
 
 /// Modal sheet for adding or editing a single rule.
 ///
 /// Presented by `RuleEditorWindowController` over its window. Round-trips a
 /// `Rule` by value: the caller hands in the rule to edit (or a fresh one for
 /// "add") and the completion delivers the edited rule on Done, or `nil` on
-/// Cancel — so the caller commits to the store only on Done. Regex fields are
-/// validated live with `RuleMatcher.compileForMatching`; Done is disabled
-/// while any pattern is invalid, so a bad rule can never be saved. AppKit,
-/// main-thread only.
-final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
+/// Cancel. Fields are wildcard patterns (`*` = any run, everything else
+/// literal), so there is nothing to validate — Done is always enabled. The
+/// App and Bundle ID rows offer a Choose… button that fills the field from an
+/// installed app picked via `NSOpenPanel`. The form is split into a Match
+/// section (the criteria) and an Action section (position and animation).
+/// AppKit, main-thread only.
+final class RuleEditSheetController: NSObject {
   private let rule: Rule
   private let isNew: Bool
   private let completion: (Rule?) -> Void
@@ -25,16 +28,7 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
   private let bodyField = NSTextField()
   private let positionPopUp = NSPopUpButton()
   private let animationPopUp = NSPopUpButton()
-  private let statusLabel = NSTextField(labelWithString: "")
   private let doneButton = NSButton()
-
-  /// The regex-backed fields paired with the label used in error messages.
-  private var regexFields: [(field: NSTextField, name: String)] {
-    [
-      (appField, "App"), (bundleField, "Bundle ID"), (titleField, "Title"),
-      (subtitleField, "Subtitle"), (bodyField, "Body"),
-    ]
-  }
 
   /// - Parameters:
   ///   - rule: The rule to edit; pass a fresh `Rule` for "add". Its `id` is
@@ -54,7 +48,6 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
     let sheet = buildSheet()
     self.sheet = sheet
     loadFields()
-    validate()
     parent.beginSheet(sheet) { [weak self] response in
       guard let self else { return }
       self.completion(response == .OK ? self.collectRule() : nil)
@@ -66,30 +59,37 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
 
   private func buildSheet() -> NSWindow {
     nameField.placeholderString = "Rule name"
-    nameField.delegate = self
-    for (field, _) in regexFields {
-      field.delegate = self
-      field.placeholderString = "regex (empty = matches anything)"
+    for field in [appField, bundleField, titleField, subtitleField, bodyField] {
+      field.placeholderString = "* matches anything; empty = ignore"
     }
     positionPopUp.addItem(withTitle: "(default)")
-    for position in Position.allCases { positionPopUp.addItem(withTitle: position.displayName) }
+    Position.allCases.forEach { positionPopUp.addItem(withTitle: $0.displayName) }
     animationPopUp.addItem(withTitle: "(default)")
-    for animation in Animation.allCases { animationPopUp.addItem(withTitle: animation.displayName) }
+    Animation.allCases.forEach { animationPopUp.addItem(withTitle: $0.displayName) }
 
     let header = NSTextField(labelWithString: isNew ? "Add Rule" : "Edit Rule")
     header.font = .boldSystemFont(ofSize: 13)
-    // Low hugging so the `.width`-aligned outer stack stretches the label to
-    // full width; otherwise it keeps its intrinsic width and lands trailing.
     header.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+    let matchHeader = sectionLabel("Match")
+    let actionHeader = sectionLabel("Action")
+    let divider = NSBox()
+    divider.boxType = .separator
+
+    let appCell = fieldWithChooser(appField, chooserButton(#selector(chooseApp)))
+    let bundleCell = fieldWithChooser(bundleField, chooserButton(#selector(chooseBundle)))
 
     let grid = NSGridView(views: [
       [rightLabel("Name:"), nameField],
       [NSGridCell.emptyContentView, enabledButton],
-      [rightLabel("App:"), appField],
-      [rightLabel("Bundle ID:"), bundleField],
+      [matchHeader, NSGridCell.emptyContentView],
+      [rightLabel("App:"), appCell],
+      [rightLabel("Bundle ID:"), bundleCell],
       [rightLabel("Title:"), titleField],
       [rightLabel("Subtitle:"), subtitleField],
       [rightLabel("Body:"), bodyField],
+      [divider, NSGridCell.emptyContentView],
+      [actionHeader, NSGridCell.emptyContentView],
       [rightLabel("Position:"), positionPopUp],
       [rightLabel("Animation:"), animationPopUp],
     ])
@@ -97,19 +97,39 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
     grid.column(at: 1).xPlacement = .fill
     grid.rowSpacing = 8
     grid.columnSpacing = 8
-    // Popups read better at their natural width than stretched across the cell.
+    // Section headers and the divider span both columns.
+    for rowIndex in [2, 8, 9] {
+      grid.mergeCells(
+        inHorizontalRange: NSRange(location: 0, length: 2),
+        verticalRange: NSRange(location: rowIndex, length: 1))
+    }
+    grid.cell(for: matchHeader)?.xPlacement = .leading
+    grid.cell(for: actionHeader)?.xPlacement = .leading
+    grid.cell(for: divider)?.xPlacement = .fill
     grid.cell(for: positionPopUp)?.xPlacement = .leading
     grid.cell(for: animationPopUp)?.xPlacement = .leading
-    // Everything in the field column hugs low so the column absorbs the grid's
-    // slack and the labels stay tight. The popups keep their natural width via
-    // the `.leading` cell placement above despite the low hugging.
+    grid.row(at: 2).topPadding = 6
+    grid.row(at: 9).topPadding = 6
+    // Field column hugs low so it absorbs the grid's slack; labels stay tight.
     for view in [nameField, appField, bundleField, titleField, subtitleField, bodyField]
       + [positionPopUp, animationPopUp] as [NSView]
     {
       view.setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
 
-    let buttons = makeFooter()
+    let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
+    cancelButton.bezelStyle = .rounded
+    cancelButton.keyEquivalent = "\u{1b}"
+    doneButton.title = isNew ? "Add" : "Done"
+    doneButton.bezelStyle = .rounded
+    doneButton.keyEquivalent = "\r"
+    doneButton.target = self
+    doneButton.action = #selector(done)
+    let spacer = NSView()
+    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    let buttons = NSStackView(views: [spacer, cancelButton, doneButton])
+    buttons.orientation = .horizontal
+    buttons.spacing = 8
 
     let inset: CGFloat = 20
     let outer = NSStackView(views: [header, grid, buttons])
@@ -120,7 +140,7 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
     outer.translatesAutoresizingMaskIntoConstraints = false
 
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 480, height: 430),
+      contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
       styleMask: [.titled], backing: .buffered, defer: false)
     guard let content = window.contentView else { return window }
     content.addSubview(outer)
@@ -129,53 +149,43 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
       outer.trailingAnchor.constraint(equalTo: content.trailingAnchor),
       outer.topAnchor.constraint(equalTo: content.topAnchor),
       outer.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-      // Give the field column a usable width. The grid then sizes naturally
-      // (label column hugs its text); forcing the grid wider only made
-      // NSGridView park the slack in the label column. The button row spans
-      // the grid so the default button lines up under the fields' right edge.
-      nameField.widthAnchor.constraint(equalToConstant: 300),
+      // Set the field column width via a bare field; the App/Bundle cells share
+      // that width with their Choose… button. Buttons span the grid so the
+      // default button lines up under the fields' right edge.
+      titleField.widthAnchor.constraint(equalToConstant: 300),
       buttons.widthAnchor.constraint(equalTo: grid.widthAnchor),
     ])
-    // Shrink the sheet to fit the form so there is no empty margin.
     window.layoutIfNeeded()
     window.setContentSize(outer.fittingSize)
     return window
   }
 
-  /// The error/status label plus Cancel and Done buttons.
-  ///
-  /// A bare spacer (not the status label) is the flexible element that pushes
-  /// Cancel/Done to the trailing edge; the stack's default gravity layout does
-  /// not stretch a text field on its own.
-  private func makeFooter() -> NSStackView {
-    statusLabel.textColor = .systemRed
-    statusLabel.font = .systemFont(ofSize: 11)
-    statusLabel.lineBreakMode = .byTruncatingTail
-
-    let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
-    cancelButton.bezelStyle = .rounded
-    cancelButton.keyEquivalent = "\u{1b}"
-    doneButton.title = isNew ? "Add" : "Done"
-    doneButton.bezelStyle = .rounded
-    doneButton.keyEquivalent = "\r"
-    doneButton.target = self
-    doneButton.action = #selector(done)
-
-    let spacer = NSView()
-    spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-    let buttons = NSStackView(views: [statusLabel, spacer, cancelButton, doneButton])
-    buttons.orientation = .horizontal
-    buttons.spacing = 8
-    return buttons
-  }
-
   private func rightLabel(_ string: String) -> NSTextField {
     let label = NSTextField(labelWithString: string)
     label.alignment = .right
-    // Hug tightly so the label column stays at its content width and the grid's
-    // extra width flows to the (low-hugging) field column instead.
     label.setContentHuggingPriority(.defaultHigh, for: .horizontal)
     return label
+  }
+
+  private func sectionLabel(_ string: String) -> NSTextField {
+    let label = NSTextField(labelWithString: string)
+    label.font = .boldSystemFont(ofSize: 11)
+    label.textColor = .secondaryLabelColor
+    return label
+  }
+
+  private func chooserButton(_ action: Selector) -> NSButton {
+    let button = NSButton(title: "Choose\u{2026}", target: self, action: action)
+    button.bezelStyle = .rounded
+    button.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    return button
+  }
+
+  private func fieldWithChooser(_ field: NSTextField, _ button: NSButton) -> NSView {
+    let stack = NSStackView(views: [field, button])
+    stack.orientation = .horizontal
+    stack.spacing = 6
+    return stack
   }
 
   // MARK: Load / collect
@@ -214,38 +224,43 @@ final class RuleEditSheetController: NSObject, NSTextFieldDelegate {
 
   private func nilIfEmpty(_ value: String) -> String? { value.isEmpty ? nil : value }
 
-  // MARK: Validation
+  // MARK: App chooser
 
-  /// Re-validate every regex field, flag the invalid ones, and gate Done.
-  ///
-  /// Compiles with the same option set the runtime matcher applies so a
-  /// pattern that would behave differently at runtime than under a bare
-  /// `Regex(pattern)` is still caught here.
-  private func validate() {
-    var firstError: String?
-    for (field, name) in regexFields {
-      field.wantsLayer = true
-      let pattern = field.stringValue
-      if pattern.isEmpty {
-        field.layer?.borderWidth = 0
-        continue
-      }
-      do {
-        _ = try RuleMatcher.compileForMatching(pattern)
-        field.layer?.borderWidth = 0
-      } catch {
-        field.layer?.borderColor = NSColor.systemRed.cgColor
-        field.layer?.borderWidth = 1
-        field.layer?.cornerRadius = 4
-        if firstError == nil { firstError = "\(name): invalid regex" }
-      }
+  @objc private func chooseApp() {
+    chooseApplication { [weak self] url in
+      // Match on the name a notification reports, which is the app's display
+      // name without the ".app" extension. `displayName(atPath:)` keeps the
+      // extension when Finder is set to show all extensions, so strip it.
+      let displayName = FileManager.default.displayName(atPath: url.path)
+      let appName =
+        displayName.hasSuffix(".app") ? String(displayName.dropLast(4)) : displayName
+      self?.appField.stringValue = appName
     }
-    statusLabel.stringValue = firstError ?? ""
-    doneButton.isEnabled = firstError == nil
   }
 
-  func controlTextDidChange(_ obj: Notification) {
-    validate()
+  @objc private func chooseBundle() {
+    chooseApplication { [weak self] url in
+      if let identifier = Bundle(url: url)?.bundleIdentifier {
+        self?.bundleField.stringValue = identifier
+      }
+    }
+  }
+
+  /// Present an app picker over the sheet and pass the chosen `.app` URL to
+  /// `assign`. No-op if the user cancels.
+  private func chooseApplication(_ assign: @escaping (URL) -> Void) {
+    guard let sheet else { return }
+    let panel = NSOpenPanel()
+    panel.allowedContentTypes = [.application]
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.directoryURL = URL(fileURLWithPath: "/Applications")
+    panel.prompt = "Choose"
+    panel.beginSheetModal(for: sheet) { response in
+      guard response == .OK, let url = panel.url else { return }
+      assign(url)
+    }
   }
 
   // MARK: Actions
