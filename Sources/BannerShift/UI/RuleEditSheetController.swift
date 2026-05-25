@@ -11,7 +11,8 @@ import UniformTypeIdentifiers
 /// literal), so there is nothing to validate — Done is always enabled. The
 /// App and Bundle ID rows offer a Choose… button that fills the field from an
 /// installed app picked via `NSOpenPanel`. The form is split into a Match
-/// section (the criteria) and an Action section (position and animation).
+/// section (the criteria) and an Action section (position, animation, and
+/// whether to pin the banner to the always-on-top list).
 /// AppKit, main-thread only.
 final class RuleEditSheetController: NSObject {
   private let rule: Rule
@@ -28,6 +29,8 @@ final class RuleEditSheetController: NSObject {
   private let bodyField = NSTextField()
   private let positionPopUp = NSPopUpButton()
   private let animationPopUp = NSPopUpButton()
+  private let pinButton = NSButton(
+    checkboxWithTitle: "Also pin to the always-on-top list", target: nil, action: nil)
   private let doneButton = NSButton()
 
   /// - Parameters:
@@ -128,6 +131,7 @@ final class RuleEditSheetController: NSObject {
       [actionHeader, NSGridCell.emptyContentView],
       [rightLabel("Position:"), positionPopUp],
       [rightLabel("Animation:"), animationPopUp],
+      [NSGridCell.emptyContentView, pinButton],
     ])
     grid.column(at: 0).xPlacement = .trailing
     grid.column(at: 1).xPlacement = .fill
@@ -216,6 +220,7 @@ final class RuleEditSheetController: NSObject {
       at: rule.position.flatMap { Position.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
     animationPopUp.selectItem(
       at: rule.animation.flatMap { Animation.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+    pinButton.state = rule.pinsToList ? .on : .off
   }
 
   /// Build the edited rule from the field values, preserving the original id.
@@ -231,6 +236,7 @@ final class RuleEditSheetController: NSObject {
       titlePattern: nilIfEmpty(titleField.stringValue),
       subtitlePattern: nilIfEmpty(subtitleField.stringValue),
       bodyPattern: nilIfEmpty(bodyField.stringValue),
+      pinsToList: pinButton.state == .on,
       position: positionIndex == 0 ? nil : Position.allCases[positionIndex - 1],
       animation: animationIndex == 0 ? nil : Animation.allCases[animationIndex - 1]
     )
