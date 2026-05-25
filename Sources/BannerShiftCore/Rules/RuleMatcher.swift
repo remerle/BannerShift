@@ -91,24 +91,31 @@ public final class RuleMatcher {
     regexCache.removeAll()
   }
 
-  /// Compile `pattern` with the exact option set the matcher applies at
-  /// runtime (`ignoresCase` + `dotMatchesNewlines`).
+  /// Compile `wildcard` into the `Regex` the matcher uses at runtime.
   ///
-  /// Provided so the rule editor's syntax validator and any future
-  /// match-equivalence test can compile against the same semantics the
-  /// matcher uses. A bare `Regex(pattern)` reports a pattern as
-  /// "valid" without revealing that inline `(?-i)` will be silently
-  /// overridden or that `.` will span newlines at runtime.
-  public static func compileForMatching(_ pattern: String) throws -> Regex<AnyRegexOutput> {
-    try Regex(pattern).ignoresCase().dotMatchesNewlines()
+  /// The pattern is a BannerShift wildcard (`*` = any run, everything else
+  /// literal), translated via `WildcardPattern` and compiled with `ignoresCase`
+  /// + `dotMatchesNewlines`. Exposed so a future match-equivalence test can
+  /// compile against the same semantics the matcher uses.
+  public static func compileForMatching(_ wildcard: String) throws -> Regex<AnyRegexOutput> {
+    try Regex(WildcardPattern.regexPattern(from: wildcard)).ignoresCase().dotMatchesNewlines()
   }
 
   private func matches(_ rule: Rule, _ banner: BannerText) throws -> Bool {
-    try check(rule.appPattern, banner.appName)
-      && check(rule.bundleIDPattern, banner.bundleID ?? "")
-      && check(rule.titlePattern, banner.title)
-      && check(rule.subtitlePattern, banner.subtitle)
-      && check(rule.bodyPattern, banner.body)
+    let criteria: [(pattern: String?, subject: String)] = [
+      (rule.appPattern, banner.appName),
+      (rule.bundleIDPattern, banner.bundleID ?? ""),
+      (rule.titlePattern, banner.title),
+      (rule.subtitlePattern, banner.subtitle),
+      (rule.bodyPattern, banner.body),
+    ]
+    // A rule with no criteria specified matches nothing (not everything).
+    let specified = criteria.filter { $0.pattern?.isEmpty == false }
+    guard !specified.isEmpty else { return false }
+    for criterion in specified {
+      if try !check(criterion.pattern, criterion.subject) { return false }
+    }
+    return true
   }
 
   private func check(_ pattern: String?, _ subject: String) throws -> Bool {
