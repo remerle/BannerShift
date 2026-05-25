@@ -9,13 +9,15 @@ import CoreGraphics
 /// changed (rare, but possible across OS updates) is re-registered
 /// rather than mis-coalesced with a stale entry.
 public struct AXWindowKey: Hashable, Sendable {
-  /// Stable opaque address of the underlying AX element.
+  /// Stable identity of the underlying AX element, derived from `CFHash`.
   ///
-  /// `AXUIElement` pointer identity is stable across attribute changes
-  /// (including geometry moves) within a single notification UI process
-  /// lifetime; tearing down and recreating that process invalidates every
-  /// prior `elementID` and the keyed maps in `BannerMover` must be
-  /// cleared at that point.
+  /// It must be `CFHash`-based, not the boxed pointer address: `kAXWindows`
+  /// hands back a fresh `AXUIElement` box on every query, so the raw pointer
+  /// differs pass-to-pass for the same window. `CFHash` is consistent with
+  /// `CFEqual` and stays stable across those copies within a single
+  /// notification UI process lifetime (matching `BannerMover.elementID`).
+  /// Tearing down and recreating that process invalidates every prior
+  /// `elementID`, and the keyed maps in `BannerMover` must be cleared then.
   public let elementID: UInt64
 
   /// AX role of the registered element (e.g. `AXWindow`).

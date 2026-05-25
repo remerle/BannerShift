@@ -153,7 +153,14 @@ final class AXObserverController {
     let role = AXBannerFinder.stringAttribute(window, kAXRoleAttribute as CFString) ?? "?"
     let subrole = AXBannerFinder.stringAttribute(window, kAXSubroleAttribute as CFString) ?? "?"
     let size = AXBannerFinder.sizeAttribute(window, kAXSizeAttribute as CFString) ?? .zero
-    let id = UInt64(UInt(bitPattern: Unmanaged.passUnretained(window).toOpaque()))
+    // Identify the element by `CFHash`, not its boxed pointer: `kAXWindows`
+    // returns a fresh `AXUIElement` box on every query, so the raw pointer
+    // differs pass-to-pass for the same window (see `BannerMover.elementID`).
+    // Keying on the pointer would empty `registeredWindowKeys` on every refresh
+    // and re-register every window each pass. `CFHash` is derived from the
+    // underlying element identity (consistent with `CFEqual`) and stays stable
+    // across those copies, so the de-dup set actually dedups.
+    let id = UInt64(CFHash(window))
     return AXWindowKey(elementID: id, role: role, subrole: subrole, size: size)
   }
 
