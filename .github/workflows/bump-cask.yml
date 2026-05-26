@@ -85,8 +85,11 @@ jobs:
           set -euo pipefail
           CASK="Casks/bannershift.rb"
 
-          git config user.name  "BannerShift Release Bot"
-          git config user.email "noreply@github.com"
+          # --local is implicit when run inside a repo, but state it
+          # explicitly so a future edit that drops working-directory:
+          # cannot silently leak this identity to the runner's global config.
+          git config --local user.name  "BannerShift Release Bot"
+          git config --local user.email "noreply@github.com"
 
           if git diff --quiet -- "$CASK"; then
             echo "Cask already at ${VERSION}; nothing to push."
