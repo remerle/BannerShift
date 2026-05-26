@@ -176,42 +176,71 @@ final class BannerMover {
     }
 
     // Resolve placement once per banner (cached in the snapshot), then move.
-    let placement = placement(
+    // `placement` defers any first-sight pin via `pendingPin` so the AX-set
+    // below is the next thing on the main thread after resolve — pin work
+    // (panel render, layout) runs after the move is already in flight.
+    let resolved = placement(
       id: id, banner: banner, frames: (windowFrame, bannerFrame),
       rules: rules, defaultPosition: defaultPosition)
 
-    let target = calc.targetOrigin(for: placement.position)
-    dispatchAnimation(placement.animation, windowID: id, window: window, target: target)
+    let target = calc.targetOrigin(for: resolved.snapshot.position)
+    dispatchAnimation(
+      resolved.snapshot.animation, windowID: id, window: window, target: target)
+
+    if let pendingPin = resolved.pendingPin {
+      onPin(pendingPin)
+    }
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
         + "detection=\(detection) "
-        + "rule=\(placement.ruleName) "
-        + "position=\(placement.position.rawValue) "
-        + "animation=\(placement.animation.rawValue) "
+        + "rule=\(resolved.snapshot.ruleName) "
+        + "position=\(resolved.snapshot.position.rawValue) "
+        + "animation=\(resolved.snapshot.animation.rawValue) "
         + "bannerFrame=\(bannerFrame) "
         + "windowFrame=\(windowFrame) "
         + "target=\(target)"
     )
   }
 
+  /// Result of resolving a window's placement, including any deferred pin
+  /// the caller should fire after the move dispatches.
+  ///
+  /// `pendingPin` is non-nil only on the first sighting of a pinning banner;
+  /// repeat passes find the cached snapshot and return `pendingPin == nil`
+  /// so the pin is never double-counted.
+  private struct ResolvedPlacement {
+    let snapshot: BannerWindowSnapshot
+    let pendingPin: CapturedNotification?
+  }
+
   /// The cached placement for a window, resolving it on first sight.
   ///
-  /// A window identity maps to exactly one banner whose text never changes, so
-  /// the rule match (and its several cross-process AX text reads) runs once per
-  /// banner: the first sighting resolves the placement, records the resting
-  /// baseline used by later passes' geometry, and fires `onPin` once if the
-  /// matched rule pins. Later debounced passes find the cached snapshot and
-  /// reuse it, so the expensive extraction never repeats and the pin is never
-  /// double-counted. Caller must have already validated `invariantHolds`.
+  /// A window identity maps to exactly one banner whose text never changes,
+  /// so the rule match (and its several cross-process AX text reads) runs
+  /// once per banner: the first sighting resolves the placement, records the
+  /// resting baseline used by later passes' geometry, and surfaces any pin
+  /// the matched rule asks for via `pendingPin` for the caller to fire after
+  /// the move. Later debounced passes find the cached snapshot, return
+  /// `pendingPin == nil`, and so the expensive extraction never repeats and
+  /// the pin is never double-counted. Caller must have already validated
+  /// `invariantHolds`.
+  ///
+  /// Pinning is intentionally deferred to the caller (instead of fired here)
+  /// so that the AX `setAttribute` move can dispatch before the pin's panel
+  /// render runs on the main thread; firing the pin inside this method put
+  /// the rebuild on the first-move critical path and surfaced as the banner
+  /// being briefly visible at the OS-default top-right position.
   private func placement(
     id: UInt64,
     banner: AXUIElement,
     frames: (window: CGRect, banner: CGRect),
     rules: [Rule],
     defaultPosition: Position
-  ) -> BannerWindowSnapshot {
-    if let existing = windowSnapshots[id] { return existing }
+  ) -> ResolvedPlacement {
+    if let existing = windowSnapshots[id] {
+      return ResolvedPlacement(snapshot: existing, pendingPin: nil)
+    }
     let resolved = resolvePositionAndAnimation(
       banner: banner, rules: rules, defaultPosition: defaultPosition)
     let snapshot = BannerWindowSnapshot(
@@ -223,10 +252,7 @@ final class BannerMover {
       ruleName: resolved.ruleName
     )
     windowSnapshots[id] = snapshot
-    if let pinned = resolved.pinned {
-      onPin(pinned)
-    }
-    return snapshot
+    return ResolvedPlacement(snapshot: snapshot, pendingPin: resolved.pinned)
   }
 
   /// Construct a `PositionCalculator` for this banner.
