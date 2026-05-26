@@ -32,6 +32,14 @@ background with no Dock icon, just a small menu-bar control.
 
 ## Install
 
+### With Homebrew (recommended)
+
+```bash
+brew install --cask remerle/tap/bannershift
+```
+
+`brew upgrade --cask bannershift` updates to the latest release.
+
 ### Download a release
 
 Grab the latest notarized build from the
