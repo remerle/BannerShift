@@ -11,8 +11,9 @@ import UniformTypeIdentifiers
 /// literal), so there is nothing to validate — Done is always enabled. The
 /// App and Bundle ID rows offer a Choose… button that fills the field from an
 /// installed app picked via `NSOpenPanel`. The form is split into a Match
-/// section (the criteria) and an Action section (position, animation, and
-/// whether to pin the banner to the always-on-top list).
+/// section (the criteria) and an Action section (animation and whether to
+/// pin the banner to the always-on-top list). Position is global — set
+/// from the menu bar's Default Position submenu — and not per-rule.
 /// AppKit, main-thread only.
 final class RuleEditSheetController: NSObject {
   private let rule: Rule
@@ -27,7 +28,6 @@ final class RuleEditSheetController: NSObject {
   private let titleField = NSTextField()
   private let subtitleField = NSTextField()
   private let bodyField = NSTextField()
-  private let positionPopUp = NSPopUpButton()
   private let animationPopUp = NSPopUpButton()
   private let pinButton = NSButton(
     checkboxWithTitle: "Also pin to the always-on-top list", target: nil, action: nil)
@@ -99,14 +99,12 @@ final class RuleEditSheetController: NSObject {
 
   /// Build the configured form grid: a Match section (the criteria, with
   /// Choose… buttons on the App and Bundle ID rows) over an Action section
-  /// (position and animation), with right-aligned labels.
+  /// (animation and pin), with right-aligned labels.
   private func makeGrid() -> NSGridView {
     nameField.placeholderString = "Rule name"
     for field in [appField, bundleField, titleField, subtitleField, bodyField] {
       field.placeholderString = "* matches anything; empty = ignore"
     }
-    positionPopUp.addItem(withTitle: "(default)")
-    for position in Position.allCases { positionPopUp.addItem(withTitle: position.displayName) }
     animationPopUp.addItem(withTitle: "(default)")
     for animation in Animation.allCases { animationPopUp.addItem(withTitle: animation.displayName) }
 
@@ -129,7 +127,6 @@ final class RuleEditSheetController: NSObject {
       [rightLabel("Body:"), bodyField],
       [divider, NSGridCell.emptyContentView],
       [actionHeader, NSGridCell.emptyContentView],
-      [rightLabel("Position:"), positionPopUp],
       [rightLabel("Animation:"), animationPopUp],
       [NSGridCell.emptyContentView, pinButton],
     ])
@@ -146,13 +143,12 @@ final class RuleEditSheetController: NSObject {
     grid.cell(for: matchHeader)?.xPlacement = .leading
     grid.cell(for: actionHeader)?.xPlacement = .leading
     grid.cell(for: divider)?.xPlacement = .fill
-    grid.cell(for: positionPopUp)?.xPlacement = .leading
     grid.cell(for: animationPopUp)?.xPlacement = .leading
     grid.row(at: 2).topPadding = 6
     grid.row(at: 9).topPadding = 6
     // Field column hugs low so it absorbs the grid's slack; labels stay tight.
     for view in [nameField, appField, bundleField, titleField, subtitleField, bodyField]
-      + [positionPopUp, animationPopUp] as [NSView]
+      + [animationPopUp] as [NSView]
     {
       view.setContentHuggingPriority(.defaultLow, for: .horizontal)
     }
@@ -216,8 +212,6 @@ final class RuleEditSheetController: NSObject {
     titleField.stringValue = rule.titlePattern ?? ""
     subtitleField.stringValue = rule.subtitlePattern ?? ""
     bodyField.stringValue = rule.bodyPattern ?? ""
-    positionPopUp.selectItem(
-      at: rule.position.flatMap { Position.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
     animationPopUp.selectItem(
       at: rule.animation.flatMap { Animation.allCases.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
     pinButton.state = rule.pinsToList ? .on : .off
@@ -225,7 +219,6 @@ final class RuleEditSheetController: NSObject {
 
   /// Build the edited rule from the field values, preserving the original id.
   private func collectRule() -> Rule {
-    let positionIndex = positionPopUp.indexOfSelectedItem
     let animationIndex = animationPopUp.indexOfSelectedItem
     return Rule(
       id: rule.id,
@@ -237,7 +230,6 @@ final class RuleEditSheetController: NSObject {
       subtitlePattern: nilIfEmpty(subtitleField.stringValue),
       bodyPattern: nilIfEmpty(bodyField.stringValue),
       pinsToList: pinButton.state == .on,
-      position: positionIndex == 0 ? nil : Position.allCases[positionIndex - 1],
       animation: animationIndex == 0 ? nil : Animation.allCases[animationIndex - 1]
     )
   }

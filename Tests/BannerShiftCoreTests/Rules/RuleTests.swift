@@ -21,7 +21,6 @@ import Testing
   let rule = Rule()
   #expect(!rule.id.isEmpty)
   #expect(rule.enabled == true)
-  #expect(rule.position == nil)
   #expect(rule.animation == nil)
   #expect(rule.appPattern == nil)
   #expect(rule.pinsToList == false)
@@ -34,7 +33,6 @@ import Testing
     enabled: true,
     appPattern: "Slack",
     titlePattern: "^DM",
-    position: .middle,
     animation: .shake
   )
   let data = try JSONEncoder().encode(rule)

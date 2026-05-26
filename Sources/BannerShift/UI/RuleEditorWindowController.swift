@@ -133,7 +133,7 @@ final class RuleEditorWindowController: NSWindowController {
       ColumnSpec(id: "on", title: "On", width: 32),
       ColumnSpec(id: "name", title: "Name", width: 180),
       ColumnSpec(id: "app", title: "App", width: 130),
-      ColumnSpec(id: "rule", title: "Position / Animation", width: 190),
+      ColumnSpec(id: "rule", title: "Animation", width: 130),
     ]
     for spec in cols {
       let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(spec.id))
@@ -302,9 +302,8 @@ extension RuleEditorWindowController: NSTableViewDelegate {
       return NSTextField(labelWithString: source)
 
     case "rule":
-      let position = rule.position?.displayName ?? "default"
       let animation = rule.animation?.displayName ?? "default"
-      return NSTextField(labelWithString: "\(position) / \(animation)")
+      return NSTextField(labelWithString: animation)
 
     default:
       return nil

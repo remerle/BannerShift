@@ -12,11 +12,14 @@ import CoreGraphics
 ///
 /// Because the notification UI hands out a unique, short-lived window per
 /// banner, a window identity maps to exactly one banner whose text never
-/// changes. The snapshot therefore also caches the *resolved* placement
-/// (`position`, `animation`, and the diagnostic `ruleName`) computed at first
-/// sight, so the expensive AX text extraction and rule match run once per
-/// banner instead of once per debounce pass. Notification *content* is
-/// deliberately not stored here — only the placement it resolved to.
+/// changes. `position` is captured at first sight from the global default
+/// so a user changing the default mid-banner does not push the moved
+/// banner around. Rule resolution (animation, rule name, pinning) runs
+/// *after* the synchronous move dispatches, off the AX-callback critical
+/// path: `animation` and `ruleName` stay nil until that async resolve
+/// completes. A later pass that finds them already set knows the resolve
+/// has run and skips re-resolving. Notification *content* is deliberately
+/// not stored here — only the placement it resolved to.
 public struct BannerWindowSnapshot: Equatable, Sendable {
   /// Window origin as the OS placed it before any reposition.
   ///
@@ -37,26 +40,39 @@ public struct BannerWindowSnapshot: Equatable, Sendable {
   /// math non-trivial; capturing it once avoids drift.
   public let bannerFrame: CGRect
 
-  /// Grid cell this banner resolved to at first sight (a concrete cell, with
-  /// the global default already applied when no rule overrode it).
+  /// Grid cell this banner is moved to.
+  ///
+  /// Captured from the global default at first sight; no per-rule override,
+  /// so the move dispatches synchronously without waiting for rule
+  /// resolution.
   public let position: Position
 
-  /// Animation style this banner resolved to at first sight.
-  public let animation: Animation
+  /// Animation style resolved from the matched rule.
+  ///
+  /// Set when the post-move async resolve completes. Nil while resolution
+  /// is in flight or before it has been scheduled. A non-nil value of
+  /// `.none` means resolution ran and no animation was requested.
+  public var animation: Animation?
 
-  /// Human-readable name of the rule that matched, or a default marker, for
-  /// diagnostic logging only.
-  public let ruleName: String
+  /// Human-readable name of the matched rule, for diagnostic logging.
+  ///
+  /// Set alongside `animation` when the async resolve completes. Nil
+  /// mirrors `animation == nil`. Falls back to a default marker when no
+  /// rule matched.
+  public var ruleName: String?
 
-  /// Captures the geometry and resolved placement needed for repositioning,
-  /// restore, and re-application on later passes.
+  /// Capture the geometry and position used for the move.
+  ///
+  /// `animation` and `ruleName` are written later by the async resolve;
+  /// callers constructing a first-sight snapshot may leave them at their
+  /// nil defaults.
   public init(
     originalOrigin: CGPoint,
     windowFrame: CGRect,
     bannerFrame: CGRect,
     position: Position,
-    animation: Animation,
-    ruleName: String
+    animation: Animation? = nil,
+    ruleName: String? = nil
   ) {
     self.originalOrigin = originalOrigin
     self.windowFrame = windowFrame

@@ -9,11 +9,23 @@ import CoreGraphics
 /// `process(notificationUIWindows:)` is the entry point, called from the
 /// app delegate's debounced AX handler on the main thread; every method
 /// here is main-thread-only because it reads and writes AX element
-/// attributes synchronously. For each window the mover either moves the
-/// contained banner to the position/animation resolved from the user's
-/// rules (or the default), or forgets the window's tracked state when
-/// there is no banner to move (e.g. the window is the expanded
-/// Notification Center panel, or the banner has gone away).
+/// attributes synchronously. For each window the mover either snaps the
+/// contained banner to the global default position immediately, or
+/// forgets the window's tracked state when there is no banner to move
+/// (e.g. the window is the expanded Notification Center panel, or the
+/// banner has gone away).
+///
+/// The pass is split into two phases for latency: the synchronous phase
+/// covers everything required for the move to land (find banner,
+/// compute target from the default position, write the AX position
+/// attribute); the asynchronous phase does the rule resolution that
+/// drives animation and pinning. Position is intentionally *not* a rule
+/// concern any more — every banner moves to the default — because the
+/// move is what the user notices visually, and gating it on
+/// cross-process AX text extraction and pattern matching let the OS
+/// paint the banner at the top-right default before our move landed.
+/// Animation and pinning still vary per rule but kick in only after the
+/// move is in flight.
 ///
 /// On macOS 26 the banner element's AX subrole is assigned *after* the
 /// banner is already on screen, so keying off the subrole alone misses
@@ -31,14 +43,17 @@ import CoreGraphics
 /// target is computed from the banner's resting geometry and never drifts
 /// as repeated passes observe the already-moved frame; its `originalOrigin`
 /// also lets `restoreMisMovedPanel` put back a window that turned out to be
-/// the Notification Center panel. The notification UI hands out a
-/// fresh, short-lived window per banner — the OS resets it to the origin
-/// for the next banner and destroys the old one — so the mover never
-/// moves a window back; on dismiss it just drops the snapshot (keeping the
-/// map bounded against the unique-per-banner ids). `reset()` clears
-/// everything when the notification UI process exits and every tracked
-/// element becomes invalid. The mover holds no AX observer itself; it is
-/// handed the current window list each pass.
+/// the Notification Center panel. The snapshot's `animation` and
+/// `ruleName` are written by the post-move async resolve; a later pass
+/// that finds them already non-nil knows resolution has run and skips
+/// scheduling it again. The notification UI hands out a fresh, short-lived
+/// window per banner — the OS resets it to the origin for the next banner
+/// and destroys the old one — so the mover never moves a window back; on
+/// dismiss it just drops the snapshot (keeping the map bounded against the
+/// unique-per-banner ids). `reset()` clears everything when the
+/// notification UI process exits and every tracked element becomes
+/// invalid. The mover holds no AX observer itself; it is handed the
+/// current window list each pass.
 final class BannerMover {
   private var windowSnapshots: [UInt64: BannerWindowSnapshot] = [:]
   private let logger: FileLogger
@@ -46,10 +61,12 @@ final class BannerMover {
   private let ruleStore: RuleStore
   private let matcher: RuleMatcher
   private let animator: Animator
-  /// Sink invoked exactly once per banner (at first-sight) when a matched rule has `pinsToList` set.
+  /// Sink invoked exactly once per banner when the post-move async resolve
+  /// finds a matched rule with `pinsToList` set.
   ///
-  /// Fired on the main thread, like every other method here. Defaults to a
-  /// no-op so non-pinning callers need not supply it.
+  /// Fired on the main thread, like every other method here, on the
+  /// run-loop turn after the move dispatches. Defaults to a no-op so
+  /// non-pinning callers need not supply it.
   private let onPin: (CapturedNotification) -> Void
 
   init(
@@ -62,27 +79,26 @@ final class BannerMover {
   ) {
     self.logger = logger
     self.preferences = preferences
-    self.ruleStore = ruleStore
     self.matcher = matcher
+    self.ruleStore = ruleStore
     self.animator = animator
     self.onPin = onPin
   }
 
   /// Top-level pass: visit each notification UI window and move-or-restore.
   ///
-  /// Each window is repositioned to its resolved target the moment a banner
-  /// is detected — the move anchors to the banner's known resting offset, so
-  /// it does not wait for the slide-in animation to finish and never needs a
-  /// follow-up pass.
+  /// Each window is snapped to the global default the moment a banner is
+  /// detected — geometry only, no rule resolution. The matched rule's
+  /// animation and pin behavior, if any, fire on the next run-loop turn
+  /// from `resolveAndFollowUp` so the cross-process AX text extraction
+  /// they require stays off the move's critical path.
   func process(notificationUIWindows windows: [AXUIElement]) {
     let defaultPosition = preferences.position
-    let rules = ruleStore.load()
     let screens = currentScreens()
     for window in windows {
       processWindow(
         window,
         defaultPosition: defaultPosition,
-        rules: rules,
         screens: screens
       )
     }
@@ -105,7 +121,6 @@ final class BannerMover {
   private func processWindow(
     _ window: AXUIElement,
     defaultPosition: Position,
-    rules: [Rule],
     screens: [ScreenInfo]
   ) {
     let id = elementID(window)
@@ -159,13 +174,9 @@ final class BannerMover {
 
     // The resting frame is always inside the window, so this guards only the
     // structural full-display-container invariant (broken by a macOS layout
-    // change). Nothing needs to "settle": because we move the container and
-    // the banner rides along to its known resting offset, the move can fire
-    // on first detection. Bailing here also skips pinning (the first-sight
-    // block below is what fires `onPin`): with no reliable geometry we are not
-    // repositioning the banner, so we do not capture it either. Resolving the
-    // rule match only *after* this guard also keeps the expensive AX text
-    // extraction off the path when the invariant is broken.
+    // change). Bailing here also skips the async resolve (and so any
+    // pinning): with no reliable geometry we are not repositioning the
+    // banner, so we do not capture it either.
     guard calc.invariantHolds else {
       logger.error(
         "BannerMover: full-display container invariant broken; skipping move. "
@@ -175,84 +186,70 @@ final class BannerMover {
       return
     }
 
-    // Resolve placement once per banner (cached in the snapshot), then move.
-    // `placement` defers any first-sight pin via `pendingPin` so the AX-set
-    // below is the next thing on the main thread after resolve — pin work
-    // (panel render, layout) runs after the move is already in flight.
-    let resolved = placement(
-      id: id, banner: banner, frames: (windowFrame, bannerFrame),
-      rules: rules, defaultPosition: defaultPosition)
-
-    let target = calc.targetOrigin(for: resolved.snapshot.position)
-    dispatchAnimation(
-      resolved.snapshot.animation, windowID: id, window: window, target: target)
-
-    if let pendingPin = resolved.pendingPin {
-      onPin(pendingPin)
-    }
+    // Snapshot first sight (default position only, no rule resolution) and
+    // snap to the target. Everything past this point is the synchronous
+    // critical path; rule resolution, animation dispatch, and pin firing are
+    // deferred to `resolveAndFollowUp` so this method returns the moment the
+    // AX position write has been submitted.
+    let firstSight = recordFirstSight(
+      id: id, frames: (windowFrame, bannerFrame), defaultPosition: defaultPosition)
+    let target = calc.targetOrigin(for: firstSight.snapshot.position)
+    Animator.set(point: target, on: window)
 
     logger.debug(
-      "BannerMover: window=\(String(format: "%016llx", id)) "
+      "BannerMover move: window=\(String(format: "%016llx", id)) "
         + "detection=\(detection) "
-        + "rule=\(resolved.snapshot.ruleName) "
-        + "position=\(resolved.snapshot.position.rawValue) "
-        + "animation=\(resolved.snapshot.animation.rawValue) "
+        + "position=\(firstSight.snapshot.position.rawValue) "
         + "bannerFrame=\(bannerFrame) "
         + "windowFrame=\(windowFrame) "
         + "target=\(target)"
     )
-  }
 
-  /// Result of resolving a window's placement, including any deferred pin
-  /// the caller should fire after the move dispatches.
-  ///
-  /// `pendingPin` is non-nil only on the first sighting of a pinning banner;
-  /// repeat passes find the cached snapshot and return `pendingPin == nil`
-  /// so the pin is never double-counted.
-  private struct ResolvedPlacement {
-    let snapshot: BannerWindowSnapshot
-    let pendingPin: CapturedNotification?
-  }
-
-  /// The cached placement for a window, resolving it on first sight.
-  ///
-  /// A window identity maps to exactly one banner whose text never changes,
-  /// so the rule match (and its several cross-process AX text reads) runs
-  /// once per banner: the first sighting resolves the placement, records the
-  /// resting baseline used by later passes' geometry, and surfaces any pin
-  /// the matched rule asks for via `pendingPin` for the caller to fire after
-  /// the move. Later debounced passes find the cached snapshot, return
-  /// `pendingPin == nil`, and so the expensive extraction never repeats and
-  /// the pin is never double-counted. Caller must have already validated
-  /// `invariantHolds`.
-  ///
-  /// Pinning is intentionally deferred to the caller (instead of fired here)
-  /// so that the AX `setAttribute` move can dispatch before the pin's panel
-  /// render runs on the main thread; firing the pin inside this method put
-  /// the rebuild on the first-move critical path and surfaced as the banner
-  /// being briefly visible at the OS-default top-right position.
-  private func placement(
-    id: UInt64,
-    banner: AXUIElement,
-    frames: (window: CGRect, banner: CGRect),
-    rules: [Rule],
-    defaultPosition: Position
-  ) -> ResolvedPlacement {
-    if let existing = windowSnapshots[id] {
-      return ResolvedPlacement(snapshot: existing, pendingPin: nil)
+    if firstSight.isFirstSight {
+      // Defer rule resolution (banner text extraction, rule match, animation
+      // dispatch, pin firing) to the next main run-loop turn. By then the AX
+      // set above has been picked up by NotificationCenter and the banner is
+      // settling at the target, so the expensive cross-process AX text reads
+      // and any panel-render work the pin triggers happen entirely off the
+      // move's critical path.
+      DispatchQueue.main.async { [weak self] in
+        self?.resolveAndFollowUp(id: id, banner: banner, window: window, target: target)
+      }
     }
-    let resolved = resolvePositionAndAnimation(
-      banner: banner, rules: rules, defaultPosition: defaultPosition)
+  }
+
+  /// Result of `recordFirstSight`: the cached or freshly-created snapshot
+  /// plus a flag indicating whether this was the first time we saw the
+  /// window (and so whether the caller should schedule the async resolve).
+  private struct FirstSightResult {
+    let snapshot: BannerWindowSnapshot
+    let isFirstSight: Bool
+  }
+
+  /// Record a first-sighting snapshot or return the cached one.
+  ///
+  /// The snapshot stores the geometry needed for repositioning and the
+  /// default position the banner was moved to. `animation` and `ruleName`
+  /// are deliberately left nil here; the post-move async resolve writes
+  /// them when it completes. A later pass that finds the snapshot still
+  /// in the map returns `isFirstSight = false` so the caller does not
+  /// re-schedule the resolve.
+  private func recordFirstSight(
+    id: UInt64,
+    frames: (window: CGRect, banner: CGRect),
+    defaultPosition: Position
+  ) -> FirstSightResult {
+    if let existing = windowSnapshots[id] {
+      return FirstSightResult(snapshot: existing, isFirstSight: false)
+    }
     let snapshot = BannerWindowSnapshot(
       originalOrigin: frames.window.origin,
       windowFrame: frames.window,
       bannerFrame: frames.banner,
-      position: resolved.position,
-      animation: resolved.animation,
-      ruleName: resolved.ruleName
+      position: defaultPosition
     )
     windowSnapshots[id] = snapshot
-    return ResolvedPlacement(snapshot: snapshot, pendingPin: resolved.pinned)
+    return FirstSightResult(snapshot: snapshot, isFirstSight: true)
   }
 
   /// Construct a `PositionCalculator` for this banner.
@@ -296,32 +293,73 @@ final class BannerMover {
     )
   }
 
+  /// Result of resolving a banner's matched rule.
   private struct ResolvedMatch {
-    let position: Position
     let animation: Animation
     let ruleName: String
     /// Non-nil when the matched rule pins; carries the captured fields to
-    /// hand to `onPin` at first-sight.
+    /// hand to `onPin`.
     let pinned: CapturedNotification?
   }
 
-  /// Extract banner text, resolve the source bundle ID, and find the
-  /// first matching rule (if any).
+  /// Post-move async work: extract banner text, match a rule, update the
+  /// snapshot, dispatch any rule-requested animation, and fire `onPin` if
+  /// the matched rule pins.
   ///
-  /// Returns the position and animation the matched rule overrides to,
-  /// falling back to `defaultPosition` and `.none` when no rule matches,
-  /// plus a human-readable rule name for diagnostic logging. Also populates
-  /// `pinned` with the captured banner text when the matched rule has
-  /// `pinsToList` set, and nil otherwise (including the no-rule fast path).
-  private func resolvePositionAndAnimation(
-    banner: AXUIElement, rules: [Rule], defaultPosition: Position
+  /// Runs on the next main run-loop turn after the synchronous move
+  /// dispatches. If the snapshot has been evicted in the meantime (banner
+  /// dismissed, or the window turned out to be the Notification Center
+  /// panel and was restored) the resolve bails — there is nothing left to
+  /// follow up on. The banner AX element passed in may be stale by the
+  /// time this runs; AX attribute reads on a destroyed element return
+  /// empty/`.invalidUIElement`, the text extraction yields an empty
+  /// `BannerText`, the matcher finds no match, and the resolve quietly
+  /// records `(default)` and does not pin.
+  private func resolveAndFollowUp(
+    id: UInt64,
+    banner: AXUIElement,
+    window: AXUIElement,
+    target: CGPoint
+  ) {
+    guard windowSnapshots[id] != nil else { return }
+    let rules = ruleStore.load()
+    let resolved = resolveAnimationAndPin(banner: banner, rules: rules)
+
+    // Write the resolution back into the snapshot so a later pass knows the
+    // resolve has run (and so subsequent debounced passes do not schedule
+    // another one).
+    if var snapshot = windowSnapshots[id] {
+      snapshot.animation = resolved.animation
+      snapshot.ruleName = resolved.ruleName
+      windowSnapshots[id] = snapshot
+    }
+
+    dispatchAnimation(resolved.animation, windowID: id, window: window, target: target)
+
+    if let pinned = resolved.pinned {
+      onPin(pinned)
+    }
+
+    logger.debug(
+      "BannerMover resolve: window=\(String(format: "%016llx", id)) "
+        + "rule=\(resolved.ruleName) "
+        + "animation=\(resolved.animation.rawValue) "
+        + "pinned=\(resolved.pinned != nil)"
+    )
+  }
+
+  /// Extract banner text, resolve the source bundle ID, find the first
+  /// matching rule (if any), and translate the result into the animation
+  /// to dispatch and any captured notification to pin.
+  ///
+  /// `.none` and `(default)` are the no-match fallbacks. The no-rule
+  /// fast path additionally skips the AX subtree text extraction
+  /// entirely; with no rules to match, the banner's text is irrelevant.
+  private func resolveAnimationAndPin(
+    banner: AXUIElement, rules: [Rule]
   ) -> ResolvedMatch {
-    // No rules: the default position applies and the banner's text is
-    // irrelevant. Skip the AX subtree text extraction (several cross-process
-    // AX calls) so it stays off the first-move critical path.
     guard !rules.isEmpty else {
-      return ResolvedMatch(
-        position: defaultPosition, animation: .none, ruleName: "(default)", pinned: nil)
+      return ResolvedMatch(animation: .none, ruleName: "(default)", pinned: nil)
     }
     var bannerText = BannerTextExtractor.extract(from: banner)
     if let bid = AppResolver.bundleID(forAppName: bannerText.appName) {
@@ -341,20 +379,19 @@ final class BannerMover {
         title: bannerText.title, body: bannerText.body)
       : nil
     return ResolvedMatch(
-      position: match?.rule.position ?? defaultPosition,
       animation: match?.rule.animation ?? .none,
       ruleName: match?.rule.name ?? "(default)",
       pinned: pinned)
   }
 
-  /// Dispatch per animation style.
+  /// Dispatch any oscillation the matched rule requested.
   ///
-  /// `.none` snaps to the target synchronously: there is no animation, so
-  /// scheduling even a single zero-offset frame through the animator would
-  /// only defer the move by an extra run-loop turn. For shake/bounce the
-  /// banner likewise snaps to the target *immediately* (so the OS-default
-  /// location is never briefly visible), and only the oscillation waits
-  /// 150 ms for the OS's own banner-entry animation to finish.
+  /// The banner is already at `target` from the synchronous move that ran
+  /// one main run-loop turn earlier; this method only schedules the
+  /// oscillation. `.none` is a no-op: the move already happened. For
+  /// shake/bounce the oscillation waits 150 ms for the OS's own
+  /// banner-entry animation to finish, then begins from the banner's
+  /// settled position.
   private func dispatchAnimation(
     _ animation: Animation,
     windowID: UInt64,
@@ -363,15 +400,13 @@ final class BannerMover {
   ) {
     switch animation {
     case .none:
-      // Cancel any in-flight animation for this window (a superseded
-      // shake/bounce) so it can't keep writing frames, then move now. This
-      // is what `animator.animate` would do internally, minus the extra
-      // asyncAfter hop that a zero-offset frame schedule incurs.
+      // The synchronous move in processWindow already placed the banner at
+      // `target`; nothing further to do here. Cancel any in-flight animation
+      // from an earlier (now superseded) pass so it cannot keep writing
+      // frames onto this window.
       animator.cancel(windowID: windowID)
-      Animator.set(point: target, on: window)
 
     case .shake, .bounce:
-      Animator.set(point: target, on: window)
       let frames = AnimationFrames.frames(style: animation, to: target)
       animator.animate(
         windowID: windowID, window: window, frames: frames, delay: Animator.startDelay)

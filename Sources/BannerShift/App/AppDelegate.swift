@@ -199,10 +199,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     debouncer?.schedule { [weak self] in self?.runPass() }
   }
 
-  /// Run one reposition pass: refresh the window list and move-or-restore.
+  /// Run one reposition pass: move-or-restore each notification UI window,
+  /// then refresh the AX observer's per-window registrations off the
+  /// critical path.
+  ///
+  /// `refreshWindows` does several cross-process AX calls per window just
+  /// to rebuild its de-dup key set; deferring it to the next main
+  /// run-loop turn keeps it off the path between the AX callback and the
+  /// `AXUIElementSetAttributeValue` that moves the banner. New windows
+  /// still get observed: the app element is registered for
+  /// `kAXWindowCreatedNotification`, which fires another pass.
   private func runPass() {
-    axObserver?.refreshWindows()
     let windows = axObserver?.notificationUIWindows() ?? []
     mover?.process(notificationUIWindows: windows)
+    DispatchQueue.main.async { [weak self] in
+      self?.axObserver?.refreshWindows()
+    }
   }
 }

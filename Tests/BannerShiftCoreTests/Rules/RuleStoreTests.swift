@@ -22,8 +22,8 @@ private func makeSuite() throws -> UserDefaults {
   let suite = try makeSuite()
   let store = RuleStore(defaults: suite)
   let rules = [
-    Rule(name: "A", appPattern: "Slack", position: .middle),
-    Rule(name: "B", appPattern: "Calendar", position: .topRight),
+    Rule(name: "A", appPattern: "Slack", animation: .shake),
+    Rule(name: "B", appPattern: "Calendar", animation: .bounce),
   ]
   store.save(rules)
   let back = RuleStore(defaults: suite).load()
@@ -48,7 +48,7 @@ private func makeSuite() throws -> UserDefaults {
   let suite = try makeSuite()
   let store = RuleStore(defaults: suite)
   let initial = [
-    Rule(name: "A", appPattern: "Slack", position: .middle)
+    Rule(name: "A", appPattern: "Slack", animation: .shake)
   ]
   store.save(initial)
 
@@ -59,8 +59,8 @@ private func makeSuite() throws -> UserDefaults {
   // load() bypasses its cache it will return the mutated rules; the
   // cached implementation must keep returning `initial`.
   let usurper = [
-    Rule(name: "Hijacked", appPattern: "X", position: .topLeft),
-    Rule(name: "Also", appPattern: "Y", position: .topRight),
+    Rule(name: "Hijacked", appPattern: "X", animation: .bounce),
+    Rule(name: "Also", appPattern: "Y", animation: .shake),
   ]
   let mutatedBlob = try JSONEncoder().encode(usurper)
   suite.set(mutatedBlob, forKey: RuleStore.key)

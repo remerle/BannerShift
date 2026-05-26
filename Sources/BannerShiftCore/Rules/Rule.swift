@@ -1,15 +1,21 @@
 import Foundation
 
 /// One user-defined rule: a conjunction of wildcard patterns over banner
-/// metadata plus an override position and animation to apply on match.
+/// metadata plus an animation and pin flag to apply on match.
 ///
 /// Pattern fields are simple wildcards, not regex: `*` matches any run of
 /// characters and every other character is matched literally. Matching is
 /// case-insensitive and substring-based (the pattern need only appear within
 /// the field). An empty or nil pattern field is *ignored*; a rule with no
 /// pattern fields specified matches nothing. Specified fields are combined
-/// with logical AND. `position` and `animation` are optional so the editor can
-/// leave them nil to mean "keep the default."
+/// with logical AND. `animation` is optional so the editor can leave it nil
+/// to mean "keep the default."
+///
+/// Position is *not* on a rule. Every banner is moved to the global default
+/// selected from the menu bar; per-rule position overrides were removed so
+/// the move can fire synchronously off the AX callback without waiting for
+/// rule resolution. Rule resolution (animation, pin) now runs asynchronously
+/// after the move dispatches, off the critical path.
 ///
 /// Schema evolution: this type uses Swift's *synthesized* `Codable`, which has
 /// no fallback for keys absent from stored JSON — `RuleStore.decode` of an
@@ -68,19 +74,15 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
   // exist in the wild yet). See the type-level "Schema evolution" note for the
   // convention to adopt before the next field is added.
   /// When true, a matching banner is also captured into the always-on-top
-  /// pinned-notifications list, in addition to any repositioning the rule performs.
+  /// pinned-notifications list, in addition to any animation the rule performs.
   ///
   /// Defaults to false.
   public var pinsToList: Bool
 
-  /// Position to move the matched banner to.
+  /// Animation style applied to a matched banner after the move lands.
   ///
-  /// Nil falls back to the global default selected from the menu bar.
-  public var position: Position?
-
-  /// Animation style for the move.
-  ///
-  /// Nil falls back to `.none` (snap directly to the target).
+  /// Nil falls back to `.none` (no animation). The animation runs from the
+  /// banner's settled position, so it doesn't race the OS's slide-in.
   public var animation: Animation?
 
   /// Memberwise initializer with defaults suitable for the rule editor's
@@ -96,7 +98,6 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
     subtitlePattern: String? = nil,
     bodyPattern: String? = nil,
     pinsToList: Bool = false,
-    position: Position? = nil,
     animation: Animation? = nil
   ) {
     self.id = id
@@ -108,7 +109,6 @@ public struct Rule: Equatable, Sendable, Codable, Identifiable {
     self.subtitlePattern = subtitlePattern
     self.bodyPattern = bodyPattern
     self.pinsToList = pinsToList
-    self.position = position
     self.animation = animation
   }
 }

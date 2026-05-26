@@ -31,16 +31,16 @@ private let matcher = RuleMatcher()
 }
 
 @Test func firstMatchWins() {
-  let firstRule = Rule(name: "A", appPattern: "Slack", position: .middle)
-  let secondRule = Rule(name: "B", appPattern: "Slack", position: .topRight)
+  let firstRule = Rule(name: "A", appPattern: "Slack", animation: .shake)
+  let secondRule = Rule(name: "B", appPattern: "Slack", animation: .bounce)
   let match = matcher.match(
     rules: [firstRule, secondRule], banner: BannerText(appName: "Slack"))
   #expect(match?.rule.id == firstRule.id)
 }
 
 @Test func disabledRuleSkipped() {
-  let disabled = Rule(name: "Off", enabled: false, appPattern: "Slack", position: .topLeft)
-  let live = Rule(name: "On", appPattern: "Slack", position: .middle)
+  let disabled = Rule(name: "Off", enabled: false, appPattern: "Slack", animation: .shake)
+  let live = Rule(name: "On", appPattern: "Slack", animation: .bounce)
   let match = matcher.match(rules: [disabled, live], banner: BannerText(appName: "Slack"))
   #expect(match?.rule.id == live.id)
 }

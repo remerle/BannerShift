@@ -137,7 +137,7 @@ final class RuleTestSheetController: NSObject, NSTextFieldDelegate {
   private func updateResult() {
     // Mirror the live mover's precedence: it resolves the bundle ID from the
     // app's display name via `AppResolver` before matching
-    // (`BannerMover.resolvePositionAndAnimation`). Do the same here so a
+    // (`BannerMover.resolveAnimationAndPin`). Do the same here so a
     // `bundleIDPattern` rule tested by app name behaves identically to
     // production. An explicitly typed bundle ID still wins.
     let appName = appField.stringValue
