@@ -402,14 +402,14 @@ cask "bannershift" do
 
   app "BannerShift.app"
 
-  uninstall quit: "com.emerle.BannerShift"
+  uninstall quit: "dev.emerle.bannershift"
 
   zap trash: [
-    "~/Library/Caches/com.emerle.BannerShift",
-    "~/Library/HTTPStorages/com.emerle.BannerShift",
+    "~/Library/Caches/dev.emerle.bannershift",
+    "~/Library/HTTPStorages/dev.emerle.bannershift",
     "~/Library/Logs/BannerShift.log",
-    "~/Library/Preferences/com.emerle.BannerShift.plist",
-    "~/Library/Saved Application State/com.emerle.BannerShift.savedState",
+    "~/Library/Preferences/dev.emerle.bannershift.plist",
+    "~/Library/Saved Application State/dev.emerle.bannershift.savedState",
   ]
 end
 ```
@@ -555,6 +555,6 @@ Cannot be performed inside the plan; documented here so the maintainer remembers
 
    Confirm:
    - The `.app` is gone after `--cask` uninstall.
-   - `~/Library/Logs/BannerShift.log` and `~/Library/Preferences/com.emerle.BannerShift.plist` are gone after `--zap`.
+   - `~/Library/Logs/BannerShift.log` and `~/Library/Preferences/dev.emerle.bannershift.plist` are gone after `--zap`.
 
 If any of those steps fail, file an issue against the cask file in the tap, not the BannerShift repo (so future cask iterations stay self-contained).

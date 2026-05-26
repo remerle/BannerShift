@@ -84,14 +84,14 @@ cask "bannershift" do
 
   app "BannerShift.app"
 
-  uninstall quit: "com.emerle.BannerShift"
+  uninstall quit: "dev.emerle.bannershift"
 
   zap trash: [
-    "~/Library/Caches/com.emerle.BannerShift",
-    "~/Library/HTTPStorages/com.emerle.BannerShift",
+    "~/Library/Caches/dev.emerle.bannershift",
+    "~/Library/HTTPStorages/dev.emerle.bannershift",
     "~/Library/Logs/BannerShift.log",
-    "~/Library/Preferences/com.emerle.BannerShift.plist",
-    "~/Library/Saved Application State/com.emerle.BannerShift.savedState",
+    "~/Library/Preferences/dev.emerle.bannershift.plist",
+    "~/Library/Saved Application State/dev.emerle.bannershift.savedState",
   ]
 end
 ```
@@ -110,7 +110,7 @@ end
   process isn't left orphaned. Login-item registration uses `SMAppService`
   (tied to the bundle), so `quit` + bundle removal is sufficient; there is
   no LaunchAgent plist to unload.
-- `zap` paths — derived from the `com.emerle.BannerShift` defaults domain
+- `zap` paths — derived from the `dev.emerle.bannershift` defaults domain
   documented in `docs/configuration.md` and the documented log file path.
   `Caches/`, `HTTPStorages/`, and `Saved Application State/` are standard
   per-bundle-ID locations macOS may create even when the app doesn't write
