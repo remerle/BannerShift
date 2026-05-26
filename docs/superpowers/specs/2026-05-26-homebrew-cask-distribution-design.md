@@ -43,7 +43,8 @@ stapled by the release job. The `.dmg` is the conventional cask artifact:
 
 ## The tap repo
 
-**Name:** `remerle/homebrew-tap`
+**Name:** `remerle/homebrew-tap` (the `homebrew-` prefix is required by
+Homebrew; the suffix is free-form).
 **Visibility:** public (required for `brew tap` over HTTPS without auth).
 **Default branch:** `main`.
 
@@ -115,31 +116,56 @@ end
   per-bundle-ID locations macOS may create even when the app doesn't write
   them directly; including them keeps `brew uninstall --zap` complete.
 
-## Auto-bump step in `release.yml`
+## Auto-bump workflow (`.github/workflows/bump-cask.yml`)
 
-A new step appended to the existing `release` job, **after the GitHub
-release is published and before the `if: always()` keychain-teardown step**.
-The teardown will still run regardless of the bump's outcome (it's
-`if: always()`), so the bump cannot leak the ephemeral keychain. Placing the
-bump after publish means: the release artifacts are the source of truth, and
-a bump failure never blocks the release itself.
+The bump lives in a **separate workflow** that triggers on
+`release: types: [published]`, NOT in the existing `release.yml`. Reason:
+`release.yml` creates a **draft** release (`gh release create --draft`);
+the maintainer publishes manually after editing notes. The `.dmg` asset URL
+returns 404 to unauthenticated users while the release is a draft, so a
+bump pushed before publication would advertise a broken cask. Triggering on
+`release.published` runs the bump only after the artifacts are publicly
+downloadable.
+
+Side benefits of the separate workflow:
+
+- No access to signing secrets — smaller blast radius for the tap PAT.
+- The prerelease guard is a clean
+  `if: ${{ !github.event.release.prerelease }}`, no version-string parsing.
+- A bump failure cannot affect the signing pipeline.
 
 ### Trigger and guard
 
-The step runs only on stable tags. The existing version regex permits
-`vX.Y.Z-suffix`, which should not bump the cask:
-
 ```yaml
-- name: Bump Homebrew cask
-  if: ${{ !contains(needs.build.outputs.version, '-') }}
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: bump-cask-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: ${{ !github.event.release.prerelease }}
+    name: Bump Homebrew cask
+    runs-on: ubuntu-latest      # No macOS-specific tools needed; cheaper.
+    timeout-minutes: 10
+    environment:
+      name: homebrew-tap-bump
+    permissions:
+      contents: read            # this repo only; tap write is via PAT.
 ```
 
 ### Auth
 
-Checkout the tap with a **fine-grained PAT** stored as
-`HOMEBREW_TAP_PAT` in the `release-signing` GitHub Environment. This piggy-
-backs on the same manual-approval gate as the signing secrets, so the PAT
-is only mounted after a human approves the release run.
+Checkout the tap with a **fine-grained PAT** stored as `HOMEBREW_TAP_PAT`
+in a new GitHub Environment named **`homebrew-tap-bump`** with required
+reviewers (the maintainer). Approval is requested per bump run; the
+approval friction is small (one click) and gives a clean audit trail
+distinct from signing approvals.
 
 PAT scope:
 - Repository access: **only** `remerle/homebrew-tap`.
@@ -165,15 +191,30 @@ so the intent is visible.
 
 ### Update logic
 
+The workflow derives the version from the release tag and the sha256 from
+the released asset (downloading it from the public release URL — the
+release is `published` by the time this trigger fires).
+
 ```yaml
-- name: Update cask and push
+- name: Download released .dmg
   env:
-    VERSION: ${{ needs.build.outputs.version }}
+    TAG: ${{ github.event.release.tag_name }}
+    VERSION: ${{ github.event.release.tag_name }}    # stripped below
   run: |
     set -euo pipefail
+    VERSION="${TAG#v}"
+    DMG_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/BannerShift-${VERSION}.dmg"
+    curl --fail --location --silent --show-error \
+      --output "BannerShift-${VERSION}.dmg" "$DMG_URL"
+    SHA256="$(shasum -a 256 "BannerShift-${VERSION}.dmg" | awk '{print $1}')"
+    echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+    echo "SHA256=${SHA256}"   >> "$GITHUB_ENV"
 
-    SHA256="$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')"
-    CASK="homebrew-tap/Casks/bannershift.rb"
+- name: Update cask and push
+  working-directory: homebrew-tap
+  run: |
+    set -euo pipefail
+    CASK="Casks/bannershift.rb"
 
     # Targeted replacements on the two version-bearing lines. Anchored to
     # the exact field syntax so unrelated lines can't match.
@@ -183,46 +224,48 @@ so the intent is visible.
       "$CASK"
     rm -f "${CASK}.bak"
 
-    cd homebrew-tap
     git config user.name  "BannerShift Release Bot"
     git config user.email "noreply@github.com"
 
-    if git diff --quiet -- Casks/bannershift.rb; then
+    if git diff --quiet -- "$CASK"; then
       echo "Cask already at ${VERSION}; nothing to push."
       exit 0
     fi
 
-    git add Casks/bannershift.rb
+    git add "$CASK"
     git commit -m "bannershift ${VERSION}"
     git push origin HEAD:main
 ```
 
-Idempotency: re-running the workflow on the same tag is a no-op because the
-diff check short-circuits when version and sha256 are already current. This
-matches the "re-runs on the same tag must produce equivalent artifacts" rule
-in `CLAUDE.md`.
+Idempotency: re-publishing the same release (or re-running the workflow)
+is a no-op because the diff check short-circuits when version and sha256
+are already current.
 
-`set -euo pipefail` per the GHA conventions in `CLAUDE.md`.
+`set -euo pipefail` per the GHA conventions in `CLAUDE.md`. The
+`${{ github.event.release.tag_name }}` value flows through an env var
+(`TAG`) rather than direct interpolation into shell, satisfying the
+"sanitize event values via env" rule.
 
 ### Failure handling
 
-If the bump step fails (PAT expired, network error, tap repo unavailable):
+If the bump workflow fails (PAT expired, network error, tap repo
+unavailable):
 
-- The job goes red.
+- The workflow run goes red.
 - The GitHub release and uploaded artifacts are already published; they are
   the source of truth and are not rolled back.
-- The maintainer fixes the cause and either reruns the release job or
-  manually applies the bump to the tap. The cask file is small enough that
-  manual recovery is straightforward.
+- The maintainer fixes the cause and either reruns the bump workflow from
+  the Actions tab or manually applies the bump to the tap. The cask file is
+  small enough that manual recovery is straightforward.
 
-This is consistent with the workflow's overall philosophy: the release
+This is consistent with the project's overall philosophy: the release
 artifacts are immutable once published; the tap is a downstream consumer.
 
 ### Permissions
 
-The `release` job already declares `permissions: contents: write` for the
-BannerShift repo. The PAT covers the tap repo separately, so no job-level
-permission changes are needed.
+The workflow declares `permissions: contents: read` at the job level (this
+repo only). All tap-repo writes go through the PAT, scoped only to
+`remerle/homebrew-tap`.
 
 ## Docs
 
@@ -258,11 +301,19 @@ code touched, so there are no unit tests to add. Verification before merging:
 
 ## Risks and considered alternatives
 
+- **Separate workflow vs. step in `release.yml`.** Initially planned as a
+  step in the existing `release` job. Revisited when we noticed
+  `release.yml` only creates a **draft** release; publication is manual.
+  Bumping the cask before the maintainer publishes the draft would point
+  the cask at an asset URL that returns 404 to unauthenticated users.
+  Triggering on `release.published` removes that window and as a bonus
+  isolates the bump from signing secrets.
 - **Direct push vs. PR.** Chose direct push for zero per-release toil; the
-  sha256 is computed from the just-notarized artifact in the same job, so
-  the failure mode the PR review would catch (wrong checksum) is structurally
-  prevented. If the cask grows enough internal logic to warrant review, this
-  decision can be revisited without disrupting users.
+  sha256 is computed from the just-published artifact downloaded via
+  `curl --fail`, so the failure mode a PR review would catch (wrong
+  checksum) is structurally prevented. If the cask grows enough internal
+  logic to warrant review, this decision can be revisited without
+  disrupting users.
 - **Personal tap vs. `homebrew/cask`.** Personal tap chosen because
   `homebrew/cask` has a notability requirement that a brand-new v1 will not
   clear. The two paths are not mutually exclusive; upstreaming later is
