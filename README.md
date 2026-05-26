@@ -119,6 +119,15 @@ signed and notarized by Apple. Full details are in [SECURITY.md](SECURITY.md).
   `^Slack$` or `[A-Z]` won't work the way you expect. A rule matches only when
   *all* its filled-in fields match, and a rule with **every field left blank
   matches nothing** — there's no catch-all by omission.
+- **Banners look soft or low-resolution after being moved.** macOS rasterizes
+  notification banners at the framebuffer's scale. On a display set to a
+  non-HiDPI mode — typically a "1920×1080" preset on a 4K panel, where the
+  Mac sends a 1080p framebuffer and the panel hardware-upscales it — the
+  banner is rendered at 1x and the upscaler enlarges that lower-resolution
+  result, making moved banners look soft. The default top-right position is
+  unaffected because BannerShift doesn't move it. Switch the display to a
+  HiDPI scaling mode in **System Settings → Displays** (any preset other
+  than the native-1080p one on a 4K display works).
 - **After a macOS upgrade, nothing works.** BannerShift relies on a few
   undocumented macOS internals that Apple occasionally changes between major
   releases. Please [open an issue](https://github.com/remerle/BannerShift/issues)
