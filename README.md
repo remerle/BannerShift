@@ -117,7 +117,7 @@ signed and notarized by Apple. Full details are in [SECURITY.md](SECURITY.md).
   with your macOS version.
 
 To capture a diagnostic log, turn on debug logging with
-`defaults write com.emerle.BannerShift debugLoggingEnabled -bool YES`, reproduce
+`defaults write dev.emerle.bannershift debugLoggingEnabled -bool YES`, reproduce
 the problem, then set it back to `NO` — it's the only mode that records
 notification content. Details and the log location are in
 [docs/configuration.md](docs/configuration.md#logging).

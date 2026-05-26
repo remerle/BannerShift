@@ -5,7 +5,7 @@ defaults domain, writes a single log file, and reads nothing else from disk. Thi
 document lists every setting, where it lives, and the values it accepts. Most
 people never need this — everything here is also reachable from the menu-bar UI.
 
-The defaults domain (and bundle identifier) is **`com.emerle.BannerShift`**.
+The defaults domain (and bundle identifier) is **`dev.emerle.bannershift`**.
 
 ## Preferences
 
@@ -23,14 +23,14 @@ takes effect on the next reposition pass without a restart. An unrecognized
 You can set these from the command line if needed:
 
 ```bash
-defaults write com.emerle.BannerShift selectedPosition -string "bottom-right"
-defaults write com.emerle.BannerShift debugLoggingEnabled -bool YES
+defaults write dev.emerle.bannershift selectedPosition -string "bottom-right"
+defaults write dev.emerle.bannershift debugLoggingEnabled -bool YES
 ```
 
 ## Rules
 
 Rules are stored as a JSON array under the `rules` key in the same
-`com.emerle.BannerShift` defaults domain (not a standalone file). Edit them
+`dev.emerle.bannershift` defaults domain (not a standalone file). Edit them
 through **Rules…** in the menu bar rather than by hand.
 
 Each rule is:
@@ -146,7 +146,7 @@ BannerShift writes one log file:
   content stays in the gated file only. View the unified-log stream with:
 
   ```bash
-  log stream --predicate 'subsystem == "com.emerle.BannerShift"' --level info
+  log stream --predicate 'subsystem == "dev.emerle.bannershift"' --level info
   ```
 
 The file is the system of record; the unified-log mirror is a convenience and a
