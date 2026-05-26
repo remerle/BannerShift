@@ -22,8 +22,9 @@ For the deeper picture of how the code is laid out, read
 
 ## Development setup
 
-You need macOS 13+ and a Swift 5.10 toolchain (Xcode 15+ or the matching
-toolchain). Then:
+You need macOS 13+ and a Swift 6.0+ toolchain (Xcode 16+ or the matching
+toolchain); the test suite relies on the Swift Testing framework bundled with
+Swift 6. Then:
 
 ```bash
 git clone https://github.com/remerle/BannerShift.git

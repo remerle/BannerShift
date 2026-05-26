@@ -2,19 +2,27 @@
 
 BannerShift releases are signed with a Developer ID certificate, notarized by
 Apple, stapled, and packaged. There are two ways to run the pipeline: locally
-from a dev machine, or via GitHub Actions on a version tag. Both produce
-equivalent, notarized artifacts.
+from a dev machine, or via GitHub Actions on a version tag. Both produce a
+signed, notarized, stapled `BannerShift.app` — the GHA path packages it as a
+`.zip` plus a `.dmg`, the local path as a `.tar.gz`.
 
-The **git tag is the version source of truth**. The committed `Resources/Info.plist`
-carries a placeholder version (`1.0.0`); at release time the version is parsed
-from the tag (`v1.2.3` → `1.2.3`) and written into `CFBundleShortVersionString`
-and `CFBundleVersion` with `PlistBuddy`. Dev builds use the placeholder.
+The **git tag is the version source of truth** for the GitHub Actions path. The
+committed `Resources/Info.plist` carries placeholders (`CFBundleShortVersionString
+= 1.0.0`, `CFBundleVersion = 1`); the GHA workflow parses the version from the
+tag (`v1.2.3` → `1.2.3`) and overwrites both fields with `PlistBuddy` before
+building. Dev builds and the local `scripts/release.sh` path use whatever is
+already in `Info.plist` — the local script does *not* inject a tag-derived
+version, so a `make release` without editing `Info.plist` first will stamp the
+build as `1.0.0` regardless of what tag is checked out. If you need a versioned
+local build, edit `Info.plist` before running `make release`, or use the GHA
+path which handles versioning automatically.
 
 ## Via GitHub Actions (recommended)
 
 `.github/workflows/release.yml` runs the full pipeline on a `macos-14` runner
-when you push a `v*` tag. It produces a **draft** GitHub release with a notarized
-`.zip`, a notarized `.dmg`, and a SHA-256 checksum file.
+when you push a `v*` tag. It produces a **draft** GitHub release with a `.zip`
+containing the notarized and stapled `BannerShift.app`, a separately notarized
+`.dmg`, and a SHA-256 checksum file.
 
 ```bash
 git tag v1.2.3
@@ -83,8 +91,11 @@ way to cut a release.)
      read at runtime so the key ID never appears in the script.
 2. A 1Password item for the Developer ID Application certificate (and one for the
    Installer cert if you later add a `.pkg` build).
-3. Edit `scripts/populate-secrets.sh` and replace the placeholders: `VAULT`,
-   `APP_CERT_ITEM`, `INSTALLER_CERT_ITEM`, `ASC_ITEM`.
+3. `scripts/populate-secrets.sh` ships pre-filled with the maintainer's 1Password
+   vault and item IDs at the top of the script (`VAULT`, `APP_CERT_ITEM`,
+   `INSTALLER_CERT_ITEM`, `ASC_ITEM`). If you are releasing under a different
+   1Password account, replace those four constants with the IDs of your own
+   vault and items.
 4. Run `op signin` if you aren't already signed in to the 1Password CLI.
 
 ### What the scripts do

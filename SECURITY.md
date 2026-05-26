@@ -31,8 +31,10 @@ about its risk surface.
 - **Accessibility access.** BannerShift requires macOS Accessibility permission.
   This is a powerful entitlement: it lets the app read the on-screen
   accessibility tree of the notification UI process and move its windows. The app
-  reads notification text (app name, title, subtitle, body) **only** to evaluate
-  your matching rules, and it holds that text in memory only.
+  reads notification text (app name, title, subtitle, body) and resolves the
+  source app's bundle identifier **only** to evaluate your matching rules (and,
+  for rules that opt in, to populate the pinned list), holding all of it in
+  memory only.
 - **No content on disk by default.** Notification content is never written to
   disk unless you explicitly turn on debug logging (off by default). See
   [docs/configuration.md](docs/configuration.md#logging). The default log level

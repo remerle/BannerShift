@@ -14,7 +14,10 @@ it links into [`docs/`](docs/).
 ## Prerequisites
 
 - macOS 13 (Ventura) or newer.
-- A Swift 5.10 toolchain — Xcode 15+ or the matching standalone toolchain.
+- A Swift 6.0+ toolchain — Xcode 16+ or the matching standalone toolchain. The
+  manifest declares `swift-tools-version:5.10`, but the test suite uses the
+  Swift Testing framework bundled with the Swift 6 toolchain, so building the
+  tests needs Swift 6.
 - [SwiftLint](https://github.com/realm/SwiftLint) and Apple's
   [swift-format](https://github.com/swiftlang/swift-format) on your `PATH` for
   `make lint` / `make format`.
@@ -57,7 +60,7 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 ```
 .
 ├── Makefile                      # build/test/format/validate driver
-├── Package.swift                 # SwiftPM manifest (macOS 13+, swift-testing dep)
+├── Package.swift                 # SwiftPM manifest (macOS 13+; Swift Testing via the toolchain, not a dep)
 ├── Resources/
 │   ├── Info.plist                # LSUIElement, AX usage description, bundle metadata
 │   ├── BannerShift.entitlements
@@ -66,13 +69,14 @@ only needed for cutting a release — see [docs/release.md](docs/release.md).
 │   ├── BannerShiftCore/          # pure logic + value types (unit-tested)
 │   │   ├── Geometry/             # positions, displays, window snapshot, coordinate math
 │   │   ├── Animation/            # animation styles + precomputed frame schedules
-│   │   ├── Rules/                # rule model, matcher, store, banner text
+│   │   ├── Rules/                # rule model, matcher, store, banner text, wildcard
+│   │   ├── Reminders/            # pinned-list model (CapturedNotification, PinnedList)
 │   │   └── Support/              # constants, debouncer, logger, AX window key, preferences
 │   └── BannerShift/              # AppKit + AX integration (executable)
 │       ├── App/                  # entry point, delegate, permission, launch-at-login
 │       ├── Accessibility/        # AX observer, banner finder, text extraction, watchers
 │       ├── Repositioning/        # BannerMover + Animator
-│       └── UI/                   # menu bar, rule editor, about, test notification
+│       └── UI/                   # menu bar, rule editor (list + edit sheet + test sheet), about, test notification, pinned-list panel
 ├── Tests/BannerShiftCoreTests/   # Swift Testing (mirrors the Core subfolders)
 ├── scripts/
 │   ├── build-dev.sh              # universal binary, ad-hoc signed

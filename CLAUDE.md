@@ -96,7 +96,7 @@ Goal: DRY, idiomatic, secure, performant Swift. Prefer reading neighboring code 
 
 - Banner repositioning runs on the main thread in response to AX notifications (high frequency under burst conditions). The `Debouncer` (`Sources/BannerShiftCore/Support/Debouncer.swift`) coalesces event storms at `Constants.eventDebounceInterval` — use it, don't bypass it
 - Cache compiled `Regex` per-rule; do not recompile on every match
-- `BannerMover.baselines` is keyed by AX element identity (`UInt64`). Keep that map bounded by clearing entries when the corresponding banner disappears (see `reset()`)
+- `BannerMover.windowSnapshots` is keyed by AX element identity (`UInt64`). Keep that map bounded by clearing entries when the corresponding banner disappears (see `reset()`)
 - Animations (`Animator.swift`, `AnimationFrames.swift`) are precomputed frame schedules; do not allocate per-frame
 - Avoid `Timer.scheduledTimer` for sub-100ms intervals; prefer `DispatchSourceTimer` or precomputed schedules (already established in `Animator.swift`)
 - Don't add async/await to AX call sites — the AX API is synchronous-on-main-thread and adding `await` only obscures the threading invariant

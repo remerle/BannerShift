@@ -14,6 +14,7 @@ The defaults domain (and bundle identifier) is **`com.emerle.BannerShift`**.
 | Default position | `selectedPosition` | String | `top-middle` | Where banners go when no rule overrides. One of the [position values](#position-values). |
 | Menu-bar icon hidden | `iconHidden` | Bool | `false` | Hides the menu-bar icon. Reset to `false` automatically when you bring the app to the foreground, so it's recoverable. |
 | Debug logging | `debugLoggingEnabled` | Bool | `false` | Enables verbose, content-bearing logging. See [Logging](#logging). |
+| Pinned panel position | `pinnedPanelOrigin` | String (`"x,y"`) | _(unset)_ | Saved on-screen origin of the [pinned-notifications panel](pinned-notifications.md), written when you drag it. Absent until the panel is first moved; stores only the window position, never notification content. |
 
 Preferences are read live from `UserDefaults` on each access, so changing one
 takes effect on the next reposition pass without a restart. An unrecognized
@@ -39,26 +40,46 @@ Each rule is:
 | `id` | String | yes | Stable UUID, generated on creation, never mutated. |
 | `name` | String | yes | A label for your reference; not used for matching. |
 | `enabled` | Bool | yes | When `false`, the matcher skips the rule. |
-| `appPattern` | String | no | Regex matched against the source app's display name. |
-| `bundleIDPattern` | String | no | Regex matched against the resolved bundle identifier. |
-| `titlePattern` | String | no | Regex matched against the banner title. |
-| `subtitlePattern` | String | no | Regex matched against the banner subtitle. |
-| `bodyPattern` | String | no | Regex matched against the banner body. |
+| `appPattern` | String | no | Wildcard matched against the source app's display name. |
+| `bundleIDPattern` | String | no | Wildcard matched against the resolved bundle identifier (e.g. `com.tinyspeck.slackmacgap`). Use it for stable matching across app renames or when two apps share a display name. |
+| `titlePattern` | String | no | Wildcard matched against the banner title. |
+| `subtitlePattern` | String | no | Wildcard matched against the banner subtitle. |
+| `bodyPattern` | String | no | Wildcard matched against the banner body. |
+| `pinsToList` | Bool | no | When `true`, matching notifications are also copied into the always-on-top [pinned list](pinned-notifications.md). Defaults to `false` for new rules created in the editor. Note: if you hand-edit the stored JSON, this key must be present on every rule — `Rule` uses Swift's synthesized `Codable`, which has no fallback for a missing key, so omitting it causes `RuleStore` to discard the entire rule set on next launch. |
 | `position` | String | no | Position override; omit to use the global default. |
 | `animation` | String | no | Animation override; omit for `none`. |
 
 Matching semantics:
 
-- Patterns are Swift `Regex`, compiled **case-insensitively** with
-  dot-matches-newlines. A rule with multiple pattern fields matches only when
-  **all** of them match (logical AND). An omitted or empty pattern matches
-  anything.
-- Rules are evaluated in order; the **first enabled rule that matches wins**, and
-  its `position`/`animation` override the defaults.
-- A rule with an **invalid regex fails closed**: it's skipped and the error is
-  logged, never crashing the matcher.
+- Patterns are **wildcards, not regular expressions.** `*` matches any run of
+  characters (including none) and every other character is matched literally.
+  Matching is **case-insensitive** and **substring-based**: the pattern only has
+  to appear somewhere in the field, so `Slack` matches "Slack call from Dana"
+  without needing `*Slack*`. Regex metacharacters (`^`, `$`, `[`, `.`, etc.) are
+  treated as literal text, so a pattern like `^Slack$` matches the literal string
+  `^Slack$` and almost never fires.
+- An omitted or empty pattern field is **ignored**. A rule with multiple filled
+  fields matches only when **all** of them match (logical AND). A rule with
+  **every field left blank matches nothing** — leaving all fields empty does not
+  create a catch-all.
+- Rules are evaluated **top to bottom**; the **first enabled rule that matches
+  wins**, and its `position`/`animation` override the defaults. Order is
+  therefore significant — drag rows in the **Rules…** editor to reprioritize.
+- A rule whose pattern **fails to compile fails closed**: it's skipped and the
+  error is logged, never crashing the matcher or blocking later rules.
 - If the stored rules JSON is **corrupt**, BannerShift logs the failure and starts
   with an empty rule set rather than refusing to launch.
+
+## Pinned notifications
+
+Any rule with `pinsToList` set copies its matching notifications into an
+always-on-top panel that persists after the banner disappears. The list is
+**in-memory only** (it clears on relaunch) and is capped at **50 groups**
+(`Constants.maxPinnedItems`); when a new group would overflow the cap, the oldest
+group is evicted. The only thing persisted to `UserDefaults` is the panel's
+dragged position (`pinnedPanelOrigin`, above), never notification content. The
+full behavior — grouping, dismissal, and click-to-open — is documented in
+[pinned-notifications.md](pinned-notifications.md).
 
 ## Position values
 
@@ -76,7 +97,9 @@ The nine grid positions and the strings stored for them:
 | `bottom-middle` | Bottom Middle |
 | `bottom-right` | Bottom Right |
 
-Middle and bottom positions are padded `30 pt` clear of the Dock.
+Bottom positions are pinned `30 pt` clear of the Dock (`Constants.dockPadding`).
+Middle positions are centered on the visible area with a `15 pt` upward bias
+(half of `dockPadding`) to counteract the Dock's visual pull.
 
 ## Animation values
 

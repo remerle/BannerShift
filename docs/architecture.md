@@ -96,10 +96,18 @@ flowchart TD
    after startup and prunes keys for windows that have gone away (so AX pointer
    reuse can't cause a new window to silently miss its notifications).
 
-3. **`Debouncer`** (Core) coalesces event storms. AX can fire many callbacks for
-   a single banner; the debouncer waits for `Constants.eventDebounceInterval`
-   (30 ms) of quiet on the main queue before running one reposition pass. This
-   keeps burst conditions from causing visible flicker or wasted work.
+3. **`Debouncer`** (Core) coalesces event storms with a **leading-plus-trailing**
+   strategy over a `Constants.eventDebounceInterval` (30 ms) window. The first
+   event after an idle period runs the reposition pass **immediately** (the
+   leading edge), which is what catches a banner before it animates into the
+   OS-default corner; a pure trailing debounce would wait for the AX storm to go
+   quiet and the move would read as a jump. Any subsequent call during the
+   window arms or replaces a single coalesced trailing run, which fires when the
+   window closes — this catches AX state that arrived after the leading run had
+   already executed (for example, a window that existed but whose banner subtree
+   wasn't attached yet). The Debouncer itself is AX-agnostic; the AX-state
+   framing is the *motivation*. An isolated event fires the action exactly once,
+   and a burst fires it at most ~twice per window.
 
 4. **`BannerMover`** runs the pass. For each top-level window of the
    notification UI process it:
@@ -116,12 +124,17 @@ flowchart TD
      name → bundle-ID lookup maintained from `NSWorkspace` launch/terminate
      notifications, so it doesn't scan every running app on each banner);
    - asks **`RuleMatcher`** (Core) for the first enabled rule whose patterns all
-     match (case-insensitive `Regex`, AND across fields); the rule's position
-     and animation override the global defaults, otherwise the default position
-     and `none` apply;
+     match (case-insensitive **wildcard** patterns — `*` = any run, substring
+     match, AND across fields); the rule's position and animation override the
+     global defaults, otherwise the default position and `none` apply;
    - computes the destination with **`PositionCalculator`** (Core) on the screen
      the banner currently belongs to (chosen by **`DisplaySelector`**), caching a
      **`BannerWindowSnapshot`** of the window's original geometry on first move;
+   - if the matched rule's `pinsToList` is set, hands a **`CapturedNotification`**
+     to its `onPin` closure (wired by `AppDelegate` to
+     `ReminderController.capture(_:)`), which collapses it into the always-on-top
+     pinned list. `onPin` fires once, at first sight of the banner, so a banner
+     is never pinned twice;
    - dispatches the move through **`Animator`**.
 
 5. **`Animator`** writes the AX position attribute. `none` snaps to the target;
@@ -132,16 +145,32 @@ flowchart TD
    disappears, `BannerMover` restores the window's original position and drops
    its snapshot.
 
+### Pinned-notifications subsystem
+
+The `onPin` branch above feeds a small subsystem that follows the same
+functional-core / imperative-shell split. **`PinnedList`** (Core) is a pure,
+in-memory, ordered value type with collapse-by-key semantics: a
+`CapturedNotification` is grouped by `(bundleID ?? lowercased appName, title)`,
+repeats bump an occurrence count and move the group to the top, and the list is
+capped at `Constants.maxPinnedItems` (oldest group evicted on overflow).
+**`ReminderController`** (app) owns one `PinnedList` as mutable state and renders
+it into a non-activating floating `NSPanel` that sits above other apps, joins all
+Spaces, and never steals focus. It re-renders after each mutation (capture,
+per-row dismiss, dismiss-all) and persists only the panel's dragged origin to
+`Preferences.pinnedPanelOrigin` — never any notification content. See
+[pinned-notifications.md](pinned-notifications.md) for the user-facing behavior.
+
 ## Key Core types
 
 | Type | Responsibility |
 | --- | --- |
 | `Position` | The nine grid positions and their string encodings. |
-| `Animation` | The four animation styles. |
+| `Animation` | The three animation styles. |
 | `PositionCalculator` | Given screen geometry and a target position, computes the window origin; also holds the full-screen-container invariant check. |
 | `AnimationFrames` | Precomputed frame schedules (offsets + integer-snapped points) per style. |
 | `RuleMatcher` | Compiles rule patterns once and evaluates them against extracted banner text. |
 | `Rule` / `RuleStore` | The rule data model and its persistence. |
+| `PinnedList` / `CapturedNotification` | In-memory, collapse-by-key model for the always-on-top pinned list. |
 | `Preferences` | Typed accessors over `UserDefaults`. |
 | `Debouncer` | Main-queue event coalescing. |
 | `FileLogger` | Leveled file logging with a size cap; debug level gated at write time. |
@@ -169,9 +198,9 @@ and the macOS version in a comment on the affected constant.
 | `notificationUIBundleIdentifier` | `com.apple.notificationcenterui` | The system process that hosts banners. |
 | `bannerSubroles` | `AXNotificationCenterBanner`, `AXNotificationCenterAlert` | AX subroles carried by the banner element inside a notification window (never the enclosing window's own subrole). |
 | `notificationCenterPanelIdentifier` | `widget-editor` | Present only when Notification Center is expanded; used to avoid moving the panel. |
+| `axOrderedChildrenAttribute` | `AXOrderedChildren` | Undocumented AX attribute (no `kAX…` symbol). On macOS 26's SwiftUI notification UI, some descendants are reachable only through this relationship, so `NotificationCenterPanelDetector` walks it alongside `kAXChildrenAttribute`. If Apple renames it, panel detection silently breaks. |
 | `dockPadding` | `30.0` pt | Keeps middle/bottom banners clear of the Dock. |
 | `eventDebounceInterval` | `0.030` s | AX-event coalescing window. |
-| `axErrorNotificationAlreadyRegistered` | `-25200` | Benign "already registered" AX error the Swift overlay doesn't name. |
 | `maxAXRecursionDepth` | `32` | Depth cap when walking the (untrusted) AX subtree. |
 | `maxBannerMatchSubjectLength` | `4096` | Caps regex input length to bound backtracking. |
 

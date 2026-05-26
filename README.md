@@ -15,8 +15,11 @@ background with no Dock icon, just a small menu-bar control.
 - **Pick where banners appear** — corners, edge midpoints, or dead center.
 - **Per-app and per-notification rules** — send Slack to the bottom-left, calendar
   alerts to the top-middle, and so on. Match on app name, title, subtitle, or body.
-- **Optional entrance animations** — none, slide, shake, or bounce, set globally
+- **Optional entrance animations** — none, shake, or bounce, set globally
   or per rule.
+- **Pin important notifications** — a rule can also copy matching notifications
+  into an always-on-top list that stays put after the banner disappears, so the
+  ones that matter don't scroll away while you're heads-down.
 - **Multi-display aware** — each banner is moved on the screen it belongs to.
 - **Stays out of your way** — no Dock icon, no window, no network, no telemetry.
   Just a menu-bar bell you can even hide.
@@ -61,13 +64,19 @@ A bell icon then appears in your menu bar. That's the whole interface.
 
 Click the bell icon in the menu bar:
 
+- **Rules…** — opens the rules editor. Add a rule, give it a name, and set one or
+  more patterns to match on app name, bundle identifier, title, subtitle, or
+  body. The **Choose…** buttons next to App and Bundle ID let you pick an
+  installed app instead of typing its name. Each rule can send matching banners
+  to its own position with its own animation, and can optionally **pin** them to
+  the always-on-top list (see [Pinned notifications](docs/pinned-notifications.md)).
+  Patterns are wildcards, not regular expressions — see Troubleshooting below.
+  The **Test…** button in the rule list checks sample banner text against the
+  whole rule set and shows which rule matches first. Drag rows to reorder them:
+  rules are checked top to bottom and the first match wins, so order is
+  significant.
 - **Default Position** — lists the nine positions with the current one checked.
   Pick another and it applies to the next banner immediately.
-- **Rules…** — opens the rules editor. Add a rule, give it a name, and set one or
-  more patterns (app name, title, subtitle, body) to match. Each rule can send
-  matching banners to its own position with its own animation. There's a
-  sample-text box to test a rule before saving it. Rules are checked top to
-  bottom; the first match wins.
 - **Send a Test Notification** — posts a real banner so you can confirm placement.
 - **Launch at Login** — toggles whether BannerShift starts automatically. If macOS
   needs you to approve it, the menu will say so and can open the right Settings
@@ -75,9 +84,11 @@ Click the bell icon in the menu bar:
 - **Hide Menu Bar Icon…** — removes the bell (the app keeps running). Relaunch
   BannerShift to bring it back.
 - **About BannerShift** — shows the version.
+- **Quit BannerShift** — stops the app (Cmd-Q).
 
 For the exact position names, animation styles, and where settings are stored,
-see [docs/configuration.md](docs/configuration.md).
+see [docs/configuration.md](docs/configuration.md). The always-on-top pinned list
+has its own page: [docs/pinned-notifications.md](docs/pinned-notifications.md).
 
 ## Privacy & security
 
@@ -94,14 +105,22 @@ signed and notarized by Apple. Full details are in [SECURITY.md](SECURITY.md).
   running (look for the menu-bar bell). Toggling the permission off and on, then
   relaunching, clears most issues.
 - **A rule isn't matching.** Open **Rules…** and use the sample-text tester.
-  Patterns are case-insensitive regular expressions and a rule matches only when
-  *all* its filled-in fields match.
+  Patterns are **wildcards, not regular expressions**: `*` matches any run of
+  characters and everything else is matched literally, case-insensitively, as a
+  substring (so `Slack` matches "Slack call from Dana"). Regex syntax like
+  `^Slack$` or `[A-Z]` won't work the way you expect. A rule matches only when
+  *all* its filled-in fields match, and a rule with **every field left blank
+  matches nothing** — there's no catch-all by omission.
 - **After a macOS upgrade, nothing works.** BannerShift relies on a few
   undocumented macOS internals that Apple occasionally changes between major
   releases. Please [open an issue](https://github.com/remerle/BannerShift/issues)
   with your macOS version.
 
-To capture a diagnostic log, see [docs/configuration.md](docs/configuration.md#logging).
+To capture a diagnostic log, turn on debug logging with
+`defaults write com.emerle.BannerShift debugLoggingEnabled -bool YES`, reproduce
+the problem, then set it back to `NO` — it's the only mode that records
+notification content. Details and the log location are in
+[docs/configuration.md](docs/configuration.md#logging).
 
 ## Contributing & development
 
