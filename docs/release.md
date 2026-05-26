@@ -172,6 +172,7 @@ SHA256="$(curl -sL "https://github.com/remerle/BannerShift/releases/download/v${
   -e "s|^([[:space:]]*sha256 )\"[^\"]*\"|\\1\"${SHA256}\"|" \
   Casks/bannershift.rb
 rm -f Casks/bannershift.rb.bak
-git commit -am "bannershift ${VERSION}"
-git push
+git add Casks/bannershift.rb
+git commit -m "bannershift ${VERSION}"
+git push origin HEAD:main
 ```
