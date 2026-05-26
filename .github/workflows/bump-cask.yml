@@ -1,0 +1,98 @@
+name: Bump Homebrew cask
+
+# Fires when a GitHub release is published (the manual click on the draft
+# that release.yml creates). Triggering on release.published — rather than
+# adding a step inside release.yml — ensures the cask is only updated once
+# the .dmg asset URL is publicly downloadable. Bumping while the release is
+# still a draft would point users at a URL that returns 404 to anyone not
+# signed in to GitHub.
+on:
+  release:
+    types: [published]
+
+# Default: no permissions. The job below opts in to what it needs.
+permissions: {}
+
+# Never run two bumps against the same tag concurrently. Queuing is safe;
+# cancelling mid-push is not.
+concurrency:
+  group: bump-cask-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    # Skip GitHub-marked prereleases. The version-regex in release.yml
+    # already allows vX.Y.Z-suffix tags; if a maintainer marks a release as
+    # prerelease in the publish UI, we honor that and do not advertise it
+    # via Homebrew.
+    if: ${{ !github.event.release.prerelease }}
+    name: Bump Homebrew cask
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The environment provides the manual-approval gate AND scopes the PAT
+    # to just this workflow. Configure required reviewers and the
+    # HOMEBREW_TAP_PAT secret under Settings > Environments.
+    environment:
+      name: homebrew-tap-bump
+    permissions:
+      # The PAT writes to the tap repo; this job needs no write access to
+      # the BannerShift repo itself.
+      contents: read
+    steps:
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: remerle/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: homebrew-tap
+          persist-credentials: true
+
+      - name: Download released .dmg and compute sha256
+        env:
+          # Pin event values to env vars before they reach shell, per the
+          # GHA conventions in CLAUDE.md.
+          TAG: ${{ github.event.release.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          DMG_NAME="BannerShift-${VERSION}.dmg"
+          DMG_URL="https://github.com/${REPO}/releases/download/${TAG}/${DMG_NAME}"
+          curl --fail --location --silent --show-error \
+            --output "$DMG_NAME" "$DMG_URL"
+          SHA256="$(shasum -a 256 "$DMG_NAME" | awk '{print $1}')"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "SHA256=${SHA256}"   >> "$GITHUB_ENV"
+
+      - name: Update cask file
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          CASK="Casks/bannershift.rb"
+
+          # Anchored to the exact field syntax so unrelated lines (a future
+          # `version` inside a comment, etc.) can't match. The .bak suffix
+          # keeps sed portable; we delete it immediately.
+          /usr/bin/sed -i.bak -E \
+            -e "s|^([[:space:]]*version )\"[^\"]*\"|\\1\"${VERSION}\"|" \
+            -e "s|^([[:space:]]*sha256 )\"[^\"]*\"|\\1\"${SHA256}\"|" \
+            "$CASK"
+          rm -f "${CASK}.bak"
+
+      - name: Commit and push
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          CASK="Casks/bannershift.rb"
+
+          git config user.name  "BannerShift Release Bot"
+          git config user.email "noreply@github.com"
+
+          if git diff --quiet -- "$CASK"; then
+            echo "Cask already at ${VERSION}; nothing to push."
+            exit 0
+          fi
+
+          git add "$CASK"
+          git commit -m "bannershift ${VERSION}"
+          git push origin HEAD:main
