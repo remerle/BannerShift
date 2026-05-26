@@ -120,3 +120,59 @@ spctl --assess --type execute -vv build/BannerShift.app   # Gatekeeper assessmen
 xcrun stapler validate build/BannerShift.app              # notarization ticket present
 codesign --verify --deep --strict --verbose=2 build/BannerShift.app
 ```
+
+## Homebrew distribution
+
+BannerShift ships through a personal Homebrew tap at `remerle/homebrew-tap`.
+The cask is auto-bumped by `.github/workflows/bump-cask.yml`, which fires
+when a GitHub release is **published** (not on tag push).
+
+### Release flow with the cask in play
+
+1. Push a `v*` tag → `release.yml` signs and notarizes, creates a **draft**
+   GitHub release with the `.zip`, `.dmg`, and checksum attached.
+2. Open the draft in the GitHub UI, edit notes, click **Publish release**.
+3. Publishing fires `bump-cask.yml`, which downloads the `.dmg` from the
+   public release URL, computes its sha256, rewrites `version` and
+   `sha256` in `Casks/bannershift.rb` in the tap, and pushes to the tap's
+   `main`. The job requires environment approval; one click.
+
+A prerelease (`prerelease: true` on the GitHub release) does **not** bump
+the cask.
+
+### One-time GitHub configuration
+
+In **Settings → Environments** on this repo, create an environment named
+`homebrew-tap-bump`. Add **Required reviewers** (yourself). Then add this
+environment secret (scoped to `homebrew-tap-bump`, not repo-wide):
+
+| Secret | Value | How to obtain |
+|---|---|---|
+| `HOMEBREW_TAP_PAT` | Fine-grained PAT, repository access = `remerle/homebrew-tap` only, permission = `Contents: Read & write`. Nothing else. | GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token. |
+
+**PAT rotation:** Fine-grained PATs have a maximum lifetime of one year.
+Record the expiry the GitHub UI shows you; renew before that date and
+update the `HOMEBREW_TAP_PAT` secret in the environment. A bump that fails
+because the PAT expired will surface as a red workflow run; the release
+artifacts are not affected.
+
+### Manual fallback
+
+If the auto-bump fails (PAT expired, network error, tap repo unavailable),
+either rerun the workflow from the Actions tab or apply the bump manually
+to the tap:
+
+```bash
+git clone git@github.com:remerle/homebrew-tap.git
+cd homebrew-tap
+VERSION=1.2.3
+SHA256="$(curl -sL "https://github.com/remerle/BannerShift/releases/download/v${VERSION}/BannerShift-${VERSION}.dmg" | shasum -a 256 | awk '{print $1}')"
+/usr/bin/sed -i.bak -E \
+  -e "s|^([[:space:]]*version )\"[^\"]*\"|\\1\"${VERSION}\"|" \
+  -e "s|^([[:space:]]*sha256 )\"[^\"]*\"|\\1\"${SHA256}\"|" \
+  Casks/bannershift.rb
+rm -f Casks/bannershift.rb.bak
+git add Casks/bannershift.rb
+git commit -m "bannershift ${VERSION}"
+git push origin HEAD:main
+```
