@@ -4,7 +4,7 @@
 <dict>
     <key>CFBundleDevelopmentRegion</key>          <string>en</string>
     <key>CFBundleExecutable</key>                 <string>BannerShift</string>
-    <key>CFBundleIdentifier</key>                 <string>com.emerle.BannerShift</string>
+    <key>CFBundleIdentifier</key>                 <string>dev.emerle.bannershift</string>
     <key>CFBundleInfoDictionaryVersion</key>      <string>6.0</string>
     <key>CFBundleName</key>                       <string>BannerShift</string>
     <key>CFBundlePackageType</key>                <string>APPL</string>

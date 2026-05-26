@@ -12,7 +12,7 @@ public enum Constants {
   /// Must match the `CFBundleIdentifier` value in `Info.plist`; the
   /// logger subsystem and rule-store `UserDefaults` suite both key off
   /// it.
-  public static let bundleIdentifier = "com.emerle.BannerShift"
+  public static let bundleIdentifier = "dev.emerle.bannershift"
 
   /// Bundle ID of the system process that owns notification UI windows.
   ///

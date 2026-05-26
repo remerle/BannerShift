@@ -56,7 +56,7 @@ public final class Preferences {
   }
 
   /// Read live on each access so flipping the flag via
-  /// `defaults write com.emerle.BannerShift debugLoggingEnabled -bool YES`
+  /// `defaults write dev.emerle.bannershift debugLoggingEnabled -bool YES`
   /// takes effect without a relaunch. `FileLogger` re-evaluates this on
   /// every `debug(_:)` call for the same reason.
   public var debugLoggingEnabled: Bool {
