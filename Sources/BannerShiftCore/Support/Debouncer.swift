@@ -13,6 +13,15 @@ import Foundation
 /// the first event repositions the container before the banner is
 /// on-screen.
 ///
+/// **Leading runs inline when the caller is already on `.main`.** Without
+/// this, `queue.async(execute:)` defers the action to the next run-loop
+/// iteration even when no thread hop is needed, and on the AX-event path
+/// (callback delivered on the main run loop, queue == `.main`) that single
+/// turn is enough for the OS to paint the banner at the top-right default
+/// before our reposition fires. Inline execution is gated to `.main`
+/// because that is the only queue we can identify by reference; labeled
+/// queues stay on the `async` path and keep cancellable-leading semantics.
+///
 /// The trailing run is the smart half: it is armed only when a *later*
 /// schedule arrives during the window — i.e. only when there is newer AX
 /// state the leading run could not have seen (e.g. the leading run fired
@@ -86,7 +95,18 @@ public final class Debouncer {
     // queue executing on the locking thread (the production case: queue
     // == .main, caller on the main thread).
     if let leading {
-      queue.async(execute: leading)
+      // Inline-execute when the caller is already on the main queue and
+      // that is our target. `queue.async` to a queue we are already on
+      // still hands control back to the run loop for one turn — long
+      // enough for the OS to paint a new banner at the top-right default
+      // before our reposition lands. `DispatchWorkItem.perform()` honors
+      // the cancellation flag set by a concurrent `cancel()`, so a
+      // cancel that wins the lock race still no-ops the inline run.
+      if queue === DispatchQueue.main && Thread.isMainThread {
+        leading.perform()
+      } else {
+        queue.async(execute: leading)
+      }
     }
     if let trailing {
       queue.asyncAfter(deadline: trailing.deadline, execute: trailing.item)
