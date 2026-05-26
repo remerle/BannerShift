@@ -56,6 +56,29 @@ private let matcher = RuleMatcher()
   #expect(without == nil)
 }
 
+@Test func wildcardBundlePatternDoesNotMatchUnresolvedBundleID() {
+  // Regression: a wildcard `bundleIDPattern` compiles to `.*`, which matches
+  // the empty string. A banner whose bundle ID could not be resolved (nil)
+  // must NOT match such a rule — nil is not coalesced to "". This upholds
+  // BannerText.bundleID's documented contract.
+  let rule = Rule(name: "Any bundle", bundleIDPattern: "*")
+  let resolved = matcher.match(
+    rules: [rule], banner: BannerText(appName: "Slack", bundleID: "com.tinyspeck.slackmacgap"))
+  let unresolved = matcher.match(
+    rules: [rule], banner: BannerText(appName: "Slack", bundleID: nil))
+  #expect(resolved != nil, "a wildcard bundle pattern matches any resolved bundle ID")
+  #expect(unresolved == nil, "a wildcard bundle pattern must not match a nil bundle ID")
+}
+
+@Test func wildcardBundlePatternMatchesEmptyResolvedBundleID() {
+  // A present-but-empty bundle ID is a resolved (non-nil) value, so a
+  // wildcard still matches it — only the nil (unresolved) case is excluded.
+  let rule = Rule(name: "Any bundle", bundleIDPattern: "*")
+  let match = matcher.match(
+    rules: [rule], banner: BannerText(appName: "X", bundleID: ""))
+  #expect(match != nil)
+}
+
 @Test func literalDotInBundlePatternIsNotWildcard() {
   // The dot in a bundle pattern matches a literal dot, not any character.
   let rule = Rule(name: "Mail", bundleIDPattern: "com.apple.mail")

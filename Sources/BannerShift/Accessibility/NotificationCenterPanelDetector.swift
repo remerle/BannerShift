@@ -61,7 +61,8 @@ enum NotificationCenterPanelDetector {
   /// shared node twice is harmless.
   private static func childElements(of element: AXUIElement) -> [AXUIElement] {
     let direct = AXBannerFinder.arrayAttribute(element, kAXChildrenAttribute as CFString)
-    let ordered = AXBannerFinder.arrayAttribute(element, "AXOrderedChildren" as CFString)
+    let ordered = AXBannerFinder.arrayAttribute(
+      element, Constants.axOrderedChildrenAttribute as CFString)
     return ordered.isEmpty ? direct : direct + ordered
   }
 }

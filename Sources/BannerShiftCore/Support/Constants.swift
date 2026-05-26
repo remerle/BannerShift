@@ -56,6 +56,18 @@ public enum Constants {
   /// Verified: macOS 13 (Ventura) through macOS 26 (May 2026).
   public static let notificationCenterPanelIdentifier = "widget-editor"
 
+  /// AX attribute name for the ordered-children relationship.
+  ///
+  /// Not a documented public AX constant (there is no `kAX…` symbol for it).
+  /// The macOS 26 SwiftUI notification UI exposes some descendants only
+  /// through this relationship, so a `kAXChildrenAttribute`-only tree walk
+  /// can miss them; `NotificationCenterPanelDetector` walks both. If a future
+  /// macOS release renames this attribute, panel detection silently breaks —
+  /// this is the one place to update.
+  ///
+  /// Verified: present on macOS 26 (May 2026).
+  public static let axOrderedChildrenAttribute = "AXOrderedChildren"
+
   /// Padding (in points) to keep middle- and bottom-row banner
   /// positions clear of the Dock.
   ///

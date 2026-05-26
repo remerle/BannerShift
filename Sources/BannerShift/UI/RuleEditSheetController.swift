@@ -248,14 +248,32 @@ final class RuleEditSheetController: NSObject {
 
   @objc private func chooseApp() {
     chooseApplication { [weak self] url in
-      // Match on the name a notification reports, which is the app's display
-      // name without the ".app" extension. `displayName(atPath:)` keeps the
-      // extension when Finder is set to show all extensions, so strip it.
-      let displayName = FileManager.default.displayName(atPath: url.path)
-      let appName =
-        displayName.hasSuffix(".app") ? String(displayName.dropLast(4)) : displayName
-      self?.appField.stringValue = appName
+      self?.appField.stringValue = Self.notificationAppName(for: url)
     }
+  }
+
+  /// Best-effort reconstruction of the app name a macOS notification banner
+  /// reports, used to pre-fill the App match field from a chosen `.app`.
+  ///
+  /// The banner header shows the app's *display* name, which the rule matcher
+  /// sees as `BannerText.appName`. That is `CFBundleDisplayName` when present,
+  /// otherwise `CFBundleName` — read from the localized Info dictionary first
+  /// so a localized install pre-fills the string the user actually sees on
+  /// screen. Falls back to the Finder display name (with any ".app" extension
+  /// stripped) only when the bundle exposes neither key, since
+  /// `FileManager.displayName(atPath:)` can diverge from the banner's name.
+  private static func notificationAppName(for url: URL) -> String {
+    if let bundle = Bundle(url: url) {
+      for key in ["CFBundleDisplayName", "CFBundleName"] {
+        if let name = (bundle.localizedInfoDictionary?[key] ?? bundle.infoDictionary?[key])
+          as? String, !name.isEmpty
+        {
+          return name
+        }
+      }
+    }
+    let displayName = FileManager.default.displayName(atPath: url.path)
+    return displayName.hasSuffix(".app") ? String(displayName.dropLast(4)) : displayName
   }
 
   @objc private func chooseBundle() {

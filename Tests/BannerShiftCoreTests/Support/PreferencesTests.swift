@@ -57,3 +57,37 @@ private func makeSuite() throws -> UserDefaults {
   suite.set(true, forKey: "debugLoggingEnabled")
   #expect(prefs.debugLoggingEnabled == true)
 }
+
+@Test func pinnedPanelOriginDefaultsToNil() throws {
+  let prefs = Preferences(defaults: try makeSuite())
+  #expect(prefs.pinnedPanelOrigin == nil)
+}
+
+@Test func pinnedPanelOriginRoundTrips() throws {
+  let suite = try makeSuite()
+  let prefs = Preferences(defaults: suite)
+  prefs.pinnedPanelOrigin = CGPoint(x: 137.5, y: -42)
+  let reread = try #require(Preferences(defaults: suite).pinnedPanelOrigin)
+  #expect(reread.x == 137.5)
+  #expect(reread.y == -42)
+}
+
+@Test func pinnedPanelOriginSettingNilClearsStoredValue() throws {
+  let suite = try makeSuite()
+  let prefs = Preferences(defaults: suite)
+  prefs.pinnedPanelOrigin = CGPoint(x: 10, y: 20)
+  prefs.pinnedPanelOrigin = nil
+  #expect(Preferences(defaults: suite).pinnedPanelOrigin == nil)
+  #expect(suite.string(forKey: "pinnedPanelOrigin") == nil)
+}
+
+@Test func pinnedPanelOriginFallsBackOnMalformedString() throws {
+  // External / stale values must not crash or yield a bogus point.
+  for garbage in ["garbage", "1", "1,2,3", "x,y", ""] {
+    let suite = try makeSuite()
+    suite.set(garbage, forKey: "pinnedPanelOrigin")
+    #expect(
+      Preferences(defaults: suite).pinnedPanelOrigin == nil,
+      "malformed origin \"\(garbage)\" must parse as nil")
+  }
+}

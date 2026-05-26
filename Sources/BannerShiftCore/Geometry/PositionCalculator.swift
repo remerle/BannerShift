@@ -50,6 +50,45 @@ public struct PositionCalculator {
     self.primaryHeight = primaryHeight
   }
 
+  /// Computes the banner's *resting* frame in window-relative coordinates
+  /// from the live (screen-space AX) window and banner frames.
+  ///
+  /// `bannerFrame` everywhere in this type is window-relative (offset from
+  /// the container window's origin, range `0...windowFrame.width` /
+  /// `0...windowFrame.height`); `invariantHolds` enforces that. AX, however,
+  /// reports both the window and the banner in screen-space, top-left-origin
+  /// coordinates, so the live banner frame must be rebased onto the window
+  /// before it can feed the position math. This is the single place that
+  /// conversion happens.
+  ///
+  /// Two adjustments are applied:
+  /// - **x** anchors to the banner's fixed resting inset from the window's
+  ///   right edge (`Constants.bannerRightPadding`), not the live `minX`,
+  ///   which is still off-screen mid-slide-in. The result is the window-
+  ///   relative left edge the banner settles at.
+  /// - **y** is rebased to window-relative by subtracting the window's AX
+  ///   origin. On the primary display the container window's AX origin is
+  ///   `(0, 0)`, so this is a no-op there; on a display positioned above the
+  ///   primary the window's AX origin y is negative, and without this
+  ///   subtraction the banner's screen-space y leaks through, making
+  ///   `invariantHolds` reject the (valid) layout and the banner never moves.
+  ///
+  /// - Parameters:
+  ///   - windowFrame: Screen-space AX frame of the container window.
+  ///   - liveBannerFrame: Screen-space AX frame of the banner element.
+  /// - Returns: The banner's resting frame in window-relative coordinates,
+  ///   suitable as the `bannerFrame` argument to `init`.
+  public static func restingBannerFrame(
+    windowFrame: CGRect, liveBannerFrame: CGRect
+  ) -> CGRect {
+    CGRect(
+      x: windowFrame.width - liveBannerFrame.width - Constants.bannerRightPadding,
+      y: liveBannerFrame.minY - windowFrame.origin.y,
+      width: liveBannerFrame.width,
+      height: liveBannerFrame.height
+    )
+  }
+
   /// True iff the AX container window is the full height of the
   /// display.
   ///

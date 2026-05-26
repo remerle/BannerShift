@@ -28,9 +28,15 @@ final class NotificationUIWatcher {
   /// process is already running.
   ///
   /// `onUp(pid)` fires on launch (and once now for an already-running
-  /// process); `onDown` fires on termination. Not idempotent — calling
-  /// twice double-registers the observers.
+  /// process); `onDown` fires on termination. Idempotent: a second call
+  /// while already watching is a logged no-op, so a duplicate `start()`
+  /// cannot double-register the workspace observers (which would fire every
+  /// callback twice). Call `stop()` before `start()` to re-arm.
   func start() {
+    guard observers.isEmpty else {
+      logger.info("NotificationUIWatcher.start() called while already watching; ignoring")
+      return
+    }
     let nc = NSWorkspace.shared.notificationCenter
     observers.append(
       nc.addObserver(

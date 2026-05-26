@@ -102,9 +102,14 @@ public final class RuleMatcher {
   }
 
   private func matches(_ rule: Rule, _ banner: BannerText) throws -> Bool {
-    let criteria: [(pattern: String?, subject: String)] = [
+    // `bundleID` is the only optional subject: nil means the banner's app
+    // could not be resolved to a bundle identifier. It is passed through as
+    // nil (not coalesced to "") so a specified `bundleIDPattern` fails to
+    // match an unresolved banner — see `check`. Every other field is always
+    // present (possibly empty) on a `BannerText`.
+    let criteria: [(pattern: String?, subject: String?)] = [
       (rule.appPattern, banner.appName),
-      (rule.bundleIDPattern, banner.bundleID ?? ""),
+      (rule.bundleIDPattern, banner.bundleID),
       (rule.titlePattern, banner.title),
       (rule.subtitlePattern, banner.subtitle),
       (rule.bodyPattern, banner.body),
@@ -115,8 +120,15 @@ public final class RuleMatcher {
     return try specified.allSatisfy { try check($0.pattern, $0.subject) }
   }
 
-  private func check(_ pattern: String?, _ subject: String) throws -> Bool {
+  private func check(_ pattern: String?, _ subject: String?) throws -> Bool {
     guard let pattern, !pattern.isEmpty else { return true }
+    // A specified pattern requires the banner field to be present. A nil
+    // subject (an unresolved `bundleID`) cannot satisfy any pattern — including
+    // a wildcard `*`, which compiles to `.*` and would otherwise match the
+    // empty string. Matching here would let a `bundleIDPattern = "*"` rule fire
+    // on banners whose bundle ID could not be resolved, contradicting
+    // `BannerText.bundleID`'s documented contract.
+    guard let subject else { return false }
     let regex = try compiledRegex(for: pattern)
     // Cap the subject length so a pathological-length banner field
     // cannot turn a backtracking-heavy user pattern into a main-thread

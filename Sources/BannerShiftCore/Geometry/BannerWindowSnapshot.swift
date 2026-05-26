@@ -9,6 +9,14 @@ import CoreGraphics
 /// otherwise feed back into subsequent passes). The snapshot also
 /// remembers `originalOrigin` so the window can be restored to the
 /// OS-default position when the banner is dismissed.
+///
+/// Because the notification UI hands out a unique, short-lived window per
+/// banner, a window identity maps to exactly one banner whose text never
+/// changes. The snapshot therefore also caches the *resolved* placement
+/// (`position`, `animation`, and the diagnostic `ruleName`) computed at first
+/// sight, so the expensive AX text extraction and rule match run once per
+/// banner instead of once per debounce pass. Notification *content* is
+/// deliberately not stored here — only the placement it resolved to.
 public struct BannerWindowSnapshot: Equatable, Sendable {
   /// Window origin as the OS placed it before any reposition.
   ///
@@ -29,10 +37,32 @@ public struct BannerWindowSnapshot: Equatable, Sendable {
   /// math non-trivial; capturing it once avoids drift.
   public let bannerFrame: CGRect
 
-  /// Captures the geometry needed for both repositioning and restore.
-  public init(originalOrigin: CGPoint, windowFrame: CGRect, bannerFrame: CGRect) {
+  /// Grid cell this banner resolved to at first sight (a concrete cell, with
+  /// the global default already applied when no rule overrode it).
+  public let position: Position
+
+  /// Animation style this banner resolved to at first sight.
+  public let animation: Animation
+
+  /// Human-readable name of the rule that matched, or a default marker, for
+  /// diagnostic logging only.
+  public let ruleName: String
+
+  /// Captures the geometry and resolved placement needed for repositioning,
+  /// restore, and re-application on later passes.
+  public init(
+    originalOrigin: CGPoint,
+    windowFrame: CGRect,
+    bannerFrame: CGRect,
+    position: Position,
+    animation: Animation,
+    ruleName: String
+  ) {
     self.originalOrigin = originalOrigin
     self.windowFrame = windowFrame
     self.bannerFrame = bannerFrame
+    self.position = position
+    self.animation = animation
+    self.ruleName = ruleName
   }
 }

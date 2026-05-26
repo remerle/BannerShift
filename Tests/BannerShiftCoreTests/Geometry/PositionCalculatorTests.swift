@@ -5,7 +5,7 @@ import Testing
 
 private let screen = ScreenInfo(
   frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
-  visibleFrame: CGRect(x: 0, y: 25, width: 1920, height: 1055),  // 25pt menu bar
+  visibleFrame: CGRect(x: 0, y: 25, width: 1920, height: 1055),  // 25pt Dock inset (bottom)
   isPrimary: true
 )
 private let primaryHeight: CGFloat = 1080
@@ -190,6 +190,44 @@ private func makeCalc(
   )
   let calc = makeCalc(screen: driftScreen)
   #expect(calc.invariantHolds == true)
+}
+
+@Test func restingBannerFrameAnchorsToRightInsetOnPrimary() {
+  // Primary display: container window AX origin is (0, 0), so the only
+  // adjustment is the x anchor to the fixed right inset. A 360-wide banner
+  // in a 1920-wide window rests at x = 1920 - 360 - 16 = 1544; y passes
+  // through unchanged because the window origin y is 0.
+  let window = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+  let live = CGRect(x: 1920, y: 12, width: 360, height: 80)  // minX off-screen mid-slide
+  let resting = PositionCalculator.restingBannerFrame(windowFrame: window, liveBannerFrame: live)
+  #expect(resting.minX == 1544)
+  #expect(resting.minY == 12)
+  #expect(resting.width == 360)
+  #expect(resting.height == 80)
+}
+
+@Test func restingBannerFrameRebasesYOnDisplayAbovePrimary() {
+  // Regression for the screen-space-Y bug: a display positioned ABOVE the
+  // primary has a container window whose AX origin y is negative (its top
+  // edge is above the primary's top in AX's top-left-origin space). The
+  // banner's live AX minY is likewise negative. Window-relative y must be
+  // the difference, landing back in 0...windowHeight — otherwise the
+  // negative screen-space y leaks through and `invariantHolds` (minY >= 0)
+  // rejects the valid layout, so the banner is never repositioned.
+  let window = CGRect(x: 0, y: -768, width: 1366, height: 768)
+  let live = CGRect(x: 1366, y: -756, width: 360, height: 80)  // 12pt below the window top
+  let resting = PositionCalculator.restingBannerFrame(windowFrame: window, liveBannerFrame: live)
+  #expect(resting.minY == 12, "y must be rebased to window-relative (live.minY - window.origin.y)")
+  let expectedX: CGFloat = 1366 - 360 - 16  // window width - banner width - right inset
+  #expect(resting.minX == expectedX)
+  // The rebased frame must satisfy the invariant the calculator enforces.
+  let calc = PositionCalculator(
+    windowFrame: window, bannerFrame: resting,
+    screen: ScreenInfo(
+      frame: CGRect(x: 0, y: 1080, width: 1366, height: 768),
+      visibleFrame: CGRect(x: 0, y: 1080, width: 1366, height: 768), isPrimary: false),
+    primaryHeight: 1080)
+  #expect(calc.invariantHolds == true, "rebased banner frame must satisfy invariantHolds")
 }
 
 @Test func multiMonitorUsesPrimaryHeightAsAXFlipPivot() {

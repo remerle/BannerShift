@@ -146,16 +146,11 @@ final class BannerMover {
     // Anchor to the banner's *resting* spot — not the live minX, which is still
     // off the right edge mid-slide-in — so the move can fire on first sight:
     // the banner always comes to rest the same inset from the container's right
-    // edge, and its size/minY are stable during the horizontal slide.
-    let bannerFrame = CGRect(
-      x: windowFrame.width - liveBannerFrame.width - Constants.bannerRightPadding,
-      y: liveBannerFrame.minY,
-      width: liveBannerFrame.width,
-      height: liveBannerFrame.height
-    )
-
-    let resolved = resolvePositionAndAnimation(
-      banner: banner, rules: rules, defaultPosition: defaultPosition)
+    // edge, and its size/minY are stable during the horizontal slide. The
+    // conversion to window-relative coordinates (including the y-rebase that
+    // makes secondary displays work) lives in Core and is unit-tested.
+    let bannerFrame = PositionCalculator.restingBannerFrame(
+      windowFrame: windowFrame, liveBannerFrame: liveBannerFrame)
 
     guard
       let calc = makeCalculator(
@@ -166,9 +161,11 @@ final class BannerMover {
     // structural full-display-container invariant (broken by a macOS layout
     // change). Nothing needs to "settle": because we move the container and
     // the banner rides along to its known resting offset, the move can fire
-    // on first detection. Bailing here also skips pinning (the `onPin` call
-    // lives in the first-sight block below): with no reliable geometry we are
-    // not repositioning the banner, so we do not capture it either.
+    // on first detection. Bailing here also skips pinning (the first-sight
+    // block below is what fires `onPin`): with no reliable geometry we are not
+    // repositioning the banner, so we do not capture it either. Resolving the
+    // rule match only *after* this guard also keeps the expensive AX text
+    // extraction off the path when the invariant is broken.
     guard calc.invariantHolds else {
       logger.error(
         "BannerMover: full-display container invariant broken; skipping move. "
@@ -177,35 +174,59 @@ final class BannerMover {
       )
       return
     }
-    // Record the resting baseline on first sight so later passes compute the
-    // target from the original geometry (see `makeCalculator`) instead of the
-    // already-moved frame, even though the move itself anchors to `target`.
-    if windowSnapshots[id] == nil {
-      windowSnapshots[id] = BannerWindowSnapshot(
-        originalOrigin: windowFrame.origin,
-        windowFrame: windowFrame,
-        bannerFrame: bannerFrame
-      )
-      // First sight of this banner window: capture it once, if its rule
-      // pins. Re-processing the same window on later debounced passes finds
-      // a non-nil snapshot and so never double-counts.
-      if let pinned = resolved.pinned {
-        onPin(pinned)
-      }
-    }
-    let target = calc.targetOrigin(for: resolved.position)
-    dispatchAnimation(resolved.animation, windowID: id, window: window, target: target)
+
+    // Resolve placement once per banner (cached in the snapshot), then move.
+    let placement = placement(
+      id: id, banner: banner, frames: (windowFrame, bannerFrame),
+      rules: rules, defaultPosition: defaultPosition)
+
+    let target = calc.targetOrigin(for: placement.position)
+    dispatchAnimation(placement.animation, windowID: id, window: window, target: target)
 
     logger.debug(
       "BannerMover: window=\(String(format: "%016llx", id)) "
         + "detection=\(detection) "
-        + "rule=\(resolved.ruleName) "
-        + "position=\(resolved.position.rawValue) "
-        + "animation=\(resolved.animation.rawValue) "
+        + "rule=\(placement.ruleName) "
+        + "position=\(placement.position.rawValue) "
+        + "animation=\(placement.animation.rawValue) "
         + "bannerFrame=\(bannerFrame) "
         + "windowFrame=\(windowFrame) "
         + "target=\(target)"
     )
+  }
+
+  /// The cached placement for a window, resolving it on first sight.
+  ///
+  /// A window identity maps to exactly one banner whose text never changes, so
+  /// the rule match (and its several cross-process AX text reads) runs once per
+  /// banner: the first sighting resolves the placement, records the resting
+  /// baseline used by later passes' geometry, and fires `onPin` once if the
+  /// matched rule pins. Later debounced passes find the cached snapshot and
+  /// reuse it, so the expensive extraction never repeats and the pin is never
+  /// double-counted. Caller must have already validated `invariantHolds`.
+  private func placement(
+    id: UInt64,
+    banner: AXUIElement,
+    frames: (window: CGRect, banner: CGRect),
+    rules: [Rule],
+    defaultPosition: Position
+  ) -> BannerWindowSnapshot {
+    if let existing = windowSnapshots[id] { return existing }
+    let resolved = resolvePositionAndAnimation(
+      banner: banner, rules: rules, defaultPosition: defaultPosition)
+    let snapshot = BannerWindowSnapshot(
+      originalOrigin: frames.window.origin,
+      windowFrame: frames.window,
+      bannerFrame: frames.banner,
+      position: resolved.position,
+      animation: resolved.animation,
+      ruleName: resolved.ruleName
+    )
+    windowSnapshots[id] = snapshot
+    if let pinned = resolved.pinned {
+      onPin(pinned)
+    }
+    return snapshot
   }
 
   /// Construct a `PositionCalculator` for this banner.

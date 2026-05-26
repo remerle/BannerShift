@@ -21,7 +21,13 @@ enum AccessibilityPermission {
   /// without Accessibility access. See
   /// `AppDelegate.applicationDidFinishLaunching` for the canonical handling.
   static func isTrustedOrPrompt() -> Bool {
-    let key = kAXTrustedCheckOptionPrompt.takeRetainedValue() as String
+    // `kAXTrustedCheckOptionPrompt` is an unowned framework constant: we did
+    // not create or retain it, so the value must be read with
+    // `takeUnretainedValue()`. `takeRetainedValue()` would consume a +1 we
+    // never held and over-release the constant (CF ownership rule; matches
+    // the `takeUnretainedValue` usage on the AX notification constants in
+    // `AXObserverController`).
+    let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
     let options: CFDictionary = [key: true] as CFDictionary
     return AXIsProcessTrustedWithOptions(options)
   }
